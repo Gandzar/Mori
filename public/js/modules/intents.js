@@ -28,6 +28,7 @@ import {
   updateGreeting,
 } from "./core.js";
 import { renderHistory } from "../ui.js";
+import { safeSetHistory } from "./history.js";
 import { onHistoryItemClick, onHistoryDeleteClick } from "./history.js";
 
 export async function handlePasteFromClipboard(isSilent = false) {
@@ -287,7 +288,7 @@ export function mergePendingHistorySync() {
       history.unshift(newItem);
     });
 
-    localStorage.setItem("mori_history", JSON.stringify(history.slice(0, 100)));
+    safeSetHistory(history.slice(0, 100));
 
     if (window.MoriMainBridge?.clearPendingHistoryList) {
       window.MoriMainBridge.clearPendingHistoryList();

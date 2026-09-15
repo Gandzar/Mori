@@ -23,6 +23,7 @@ import {
 import { cleanUrl } from "./utils/urlUtils.js";
 import { getUserAgent } from "./utils/index.js";
 import { translations } from "./i18n/index.js";
+import { safeSetHistory } from "./modules/history.js";
 
 let currentLang = localStorage.getItem("mori_lang") || "en";
 let lang = translations[currentLang] || translations.en;
@@ -856,9 +857,14 @@ function saveHistory(result, url) {
     );
     const existing = existingIdx !== -1 ? history[existingIdx] : null;
 
+    let thumb = result.thumbnail || (existing ? existing.thumbnail : "");
+    if (typeof thumb === "string" && thumb.startsWith("data:") && thumb.length > 25000) {
+      thumb = "";
+    }
+
     const newItem = {
       title: cleanTitle,
-      thumbnail: result.thumbnail || (existing ? existing.thumbnail : ""),
+      thumbnail: thumb,
       url: url,
       sourceUrl: result.sourceUrl || url,
       timestamp: Date.now(),
@@ -872,7 +878,7 @@ function saveHistory(result, url) {
     history.unshift(newItem);
 
     const updated = history.slice(0, 100);
-    localStorage.setItem("mori_history", JSON.stringify(updated));
+    safeSetHistory(updated);
     if (window.MoriShareBridge?.savePendingHistory) {
       window.MoriShareBridge.savePendingHistory(JSON.stringify(newItem));
     }
@@ -906,7 +912,7 @@ function updateHistorySavedFile(filename, savedPath) {
         });
       }
       history[0] = { ...first, localFiles, localUri: savedPath };
-      localStorage.setItem("mori_history", JSON.stringify(history));
+      safeSetHistory(history);
       if (window.MoriShareBridge?.savePendingHistory) {
         window.MoriShareBridge.savePendingHistory(JSON.stringify(history[0]));
       }

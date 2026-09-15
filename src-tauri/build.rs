@@ -1,10 +1,19 @@
 fn main() {
-    let sec_file = std::path::Path::new("src/engine_sec.rs");
-    if !sec_file.exists() {
-        std::fs::write(
-            sec_file,
-            "pub fn get_key(_: &str) -> Result<String, String> {\n    Err(\"Mori Engine: Native security module missing in public repository tree.\".into())\n}\n",
-        ).ok();
+    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let target = std::env::var("TARGET").unwrap_or_default();
+
+    if target.contains("windows") {
+        let win_obj = manifest_dir.join("native/windows/morisec.obj");
+        if win_obj.exists() {
+            println!("cargo:rustc-link-arg={}", win_obj.display());
+        }
+    } else if target.contains("apple") || target.contains("darwin") {
+        let darwin_dir = manifest_dir.join("native/darwin");
+        if darwin_dir.exists() {
+            println!("cargo:rustc-link-search=native={}", darwin_dir.display());
+            println!("cargo:rustc-link-lib=static=morisec");
+        }
     }
-    tauri_build::build()
+
+    tauri_build::build();
 }

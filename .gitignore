@@ -45,4 +45,4 @@ src-tauri/gen/
 src-scrapers/
 scripts/
 android/app/src/main/cpp/
-src-tauri/src/engine_sec.rs
+src-tauri/cpp/

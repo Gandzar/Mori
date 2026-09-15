@@ -3,7 +3,7 @@ import { Filesystem, showToast } from "../../utils/index.js";
 import { translations } from "../../i18n/index.js";
 import { showConfirm } from "../modals.js";
 import { renderHistory } from "../../ui.js";
-import { onHistoryItemClick, onHistoryDeleteClick } from "../history.js";
+import { onHistoryItemClick, onHistoryDeleteClick, safeSetHistory } from "../history.js";
 import {
   currentLang,
   pathVal,
@@ -47,7 +47,7 @@ export function checkAutoClearDays() {
     return time === 0 || time >= cutoff;
   });
   if (filtered.length !== initialCount) {
-    localStorage.setItem("mori_history", JSON.stringify(filtered));
+    safeSetHistory(filtered);
   }
 }
 

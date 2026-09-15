@@ -21,6 +21,127 @@ import {
   switchToSingleMode,
 } from "./core.js";
 
+export function safeSetHistory(history) {
+  if (!Array.isArray(history)) return false;
+  try {
+    localStorage.setItem("mori_history", JSON.stringify(history));
+    return true;
+  } catch (quotaErr) {
+    console.warn(
+      "[Mori History] LocalStorage quota exceeded, initiating progressive cleanup...",
+      quotaErr,
+    );
+
+    try {
+      const pruned = history.map((item, idx) => {
+        const copy = { ...item };
+        if (
+          typeof copy.thumbnail === "string" &&
+          copy.thumbnail.startsWith("data:") &&
+          (idx > 5 || copy.thumbnail.length > 20000)
+        ) {
+          copy.thumbnail = null;
+        }
+        if (
+          typeof copy.localThumbnail === "string" &&
+          copy.localThumbnail.startsWith("data:") &&
+          (idx > 5 || copy.localThumbnail.length > 20000)
+        ) {
+          copy.localThumbnail = null;
+        }
+        if (Array.isArray(copy.localFiles)) {
+          copy.localFiles = copy.localFiles.map((f) => ({
+            ...f,
+            thumbnail:
+              typeof f.thumbnail === "string" &&
+              f.thumbnail.startsWith("data:") &&
+              (idx > 5 || f.thumbnail.length > 20000)
+                ? null
+                : f.thumbnail,
+          }));
+        }
+        return copy;
+      });
+      localStorage.setItem("mori_history", JSON.stringify(pruned));
+      return true;
+    } catch (e2) {
+      console.warn(
+        "[Mori History] Tier 2 cleanup: stripping all data URLs and compacting...",
+        e2,
+      );
+      try {
+        const stripped = history.map((item) => {
+          const copy = { ...item };
+          if (
+            typeof copy.thumbnail === "string" &&
+            copy.thumbnail.startsWith("data:")
+          )
+            copy.thumbnail = null;
+          if (
+            typeof copy.localThumbnail === "string" &&
+            copy.localThumbnail.startsWith("data:")
+          )
+            copy.localThumbnail = null;
+          if (Array.isArray(copy.localFiles)) {
+            copy.localFiles = copy.localFiles.map((f) => ({
+              ...f,
+              thumbnail:
+                typeof f.thumbnail === "string" &&
+                f.thumbnail.startsWith("data:")
+                  ? null
+                  : f.thumbnail,
+            }));
+          }
+          if (Array.isArray(copy.downloads) && copy.downloads.length > 10) {
+            copy.downloads = copy.downloads.slice(0, 10);
+          }
+          return copy;
+        });
+
+        const favs = stripped.filter((h) => h.favorite);
+        const nonFavs = stripped.filter((h) => !h.favorite);
+        const consolidated = [
+          ...favs,
+          ...nonFavs.slice(0, Math.max(10, 50 - favs.length)),
+        ];
+        localStorage.setItem("mori_history", JSON.stringify(consolidated));
+        return true;
+      } catch (e3) {
+        console.error(
+          "[Mori History] Tier 3 cleanup: preserving favorites only...",
+          e3,
+        );
+        try {
+          const favsOnly = history
+            .filter((h) => h.favorite)
+            .map((h) => ({
+              title: h.title,
+              url: h.url,
+              sourceUrl: h.sourceUrl,
+              favorite: true,
+              timestamp: h.timestamp || Date.now(),
+              favTimestamp: h.favTimestamp || Date.now(),
+              localFiles: (h.localFiles || []).map((f) => ({
+                path: f.path,
+                uri: f.uri,
+                type: f.type,
+                title: f.title,
+              })),
+            }));
+          localStorage.setItem(
+            "mori_history",
+            JSON.stringify(favsOnly.slice(0, 30)),
+          );
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
+    }
+  }
+}
+window.safeSetMoriHistory = safeSetHistory;
+
 // History Edit Handlers
 editHistoryBtn?.addEventListener("click", () => {
   setIsEditingHistory(true);
@@ -103,7 +224,7 @@ export async function onHistoryDeleteClick(url) {
       }
 
       history.splice(index, 1);
-      localStorage.setItem("mori_history", JSON.stringify(history));
+      safeSetHistory(history);
       renderHistory(onHistoryItemClick, onHistoryDeleteClick);
     },
   );
@@ -140,7 +261,7 @@ export function toggleFavorite(url) {
     }
   }
 
-  localStorage.setItem("mori_history", JSON.stringify(history));
+  safeSetHistory(history);
   renderHistory(onHistoryItemClick, onHistoryDeleteClick);
   triggerHaptic?.();
 
@@ -205,7 +326,7 @@ window.addEventListener("mori_file_saved", async (e) => {
     }
   }
 
-  localStorage.setItem("mori_history", JSON.stringify(history));
+  safeSetHistory(history);
   renderHistory(onHistoryItemClick, onHistoryDeleteClick);
 
   if (isVideo) {
@@ -252,7 +373,7 @@ window.addEventListener("mori_file_saved", async (e) => {
           }
           return item;
         });
-        localStorage.setItem("mori_history", JSON.stringify(history));
+        safeSetHistory(history);
         renderHistory(onHistoryItemClick, onHistoryDeleteClick);
       }
     } catch (err) {
@@ -279,9 +400,18 @@ export function saveToHistory(result, url) {
   const existingIndex = history.findIndex((h) => cleanUrl(h.url) === targetUrl);
   const existingItem = existingIndex !== -1 ? history[existingIndex] : null;
 
+  let thumb = result.thumbnail;
+  if (
+    typeof thumb === "string" &&
+    thumb.startsWith("data:") &&
+    thumb.length > 25000
+  ) {
+    thumb = null;
+  }
+
   const newItem = {
     title: cleanTitle,
-    thumbnail: result.thumbnail,
+    thumbnail: thumb,
     url: url, // Keep the latest URL version
     sourceUrl: result.sourceUrl || url,
     timestamp: Date.now(),
@@ -318,7 +448,7 @@ export function saveToHistory(result, url) {
     if (!isNaN(parsed) && parsed > 0) maxItems = parsed;
     history = history.slice(0, maxItems);
   }
-  localStorage.setItem("mori_history", JSON.stringify(history));
+  safeSetHistory(history);
 
   // Refresh UI if defined
   if (typeof renderHistory === "function") {
@@ -350,7 +480,7 @@ export async function autoClearOldHistory() {
     console.log(
       `[CLEANUP] Removed ${history.length - filtered.length} old history items older than ${days} days`,
     );
-    localStorage.setItem("mori_history", JSON.stringify(filtered));
+    safeSetHistory(filtered);
     renderHistory(onHistoryItemClick, onHistoryDeleteClick);
 
     // Delete orphaned thumbnail files to prevent storage bloat
@@ -492,7 +622,7 @@ export function refreshAllVideoThumbnails() {
         } catch (_) {}
       }
       item.thumbVersion = 3;
-      localStorage.setItem("mori_history", JSON.stringify(currentHistory));
+      safeSetHistory(currentHistory);
 
       const historyList = document.querySelector(".history-list");
       if (historyList) {

@@ -465,16 +465,16 @@ public class MainActivity extends BridgeActivity {
                     } catch (Throwable ignored) {}
                 }
 
-                if (bitmap.getWidth() > 512 || bitmap.getHeight() > 512) {
+                if (bitmap.getWidth() > 120 || bitmap.getHeight() > 120) {
                     int bw = bitmap.getWidth();
                     int bh = bitmap.getHeight();
                     int scaledW, scaledH;
                     if (bw >= bh) {
-                        scaledW = 512;
-                        scaledH = Math.max(1, (bh * 512) / bw);
+                        scaledW = 120;
+                        scaledH = Math.max(1, (bh * 120) / bw);
                     } else {
-                        scaledH = 512;
-                        scaledW = Math.max(1, (bw * 512) / bh);
+                        scaledH = 120;
+                        scaledW = Math.max(1, (bw * 120) / bh);
                     }
                     try {
                         Bitmap scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true);
@@ -509,7 +509,7 @@ public class MainActivity extends BridgeActivity {
                     if (bitmap == null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                         try {
                             bitmap = getApplicationContext().getContentResolver().loadThumbnail(
-                                contentUri, new Size(512, 512), null);
+                                contentUri, new Size(120, 120), null);
                         } catch (Throwable ignored) {}
                     }
                 } else {
@@ -549,9 +549,9 @@ public class MainActivity extends BridgeActivity {
                         if (bitmap == null) {
                             try {
                                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                                    bitmap = ThumbnailUtils.createVideoThumbnail(f, new Size(512, 512), null);
+                                    bitmap = ThumbnailUtils.createVideoThumbnail(f, new Size(120, 120), null);
                                 } else {
-                                    bitmap = ThumbnailUtils.createVideoThumbnail(f.getAbsolutePath(), MediaStore.Images.Thumbnails.MINI_KIND);
+                                    bitmap = ThumbnailUtils.createVideoThumbnail(f.getAbsolutePath(), MediaStore.Images.Thumbnails.MICRO_KIND);
                                 }
                             } catch (Throwable ignored) {
                                 bitmap = null;
@@ -561,8 +561,18 @@ public class MainActivity extends BridgeActivity {
                 }
 
                 if (bitmap != null) {
+                    if (bitmap.getWidth() > 120 || bitmap.getHeight() > 120) {
+                        float scale = 120.0f / Math.max(bitmap.getWidth(), bitmap.getHeight());
+                        int sw = Math.max(1, Math.round(bitmap.getWidth() * scale));
+                        int sh = Math.max(1, Math.round(bitmap.getHeight() * scale));
+                        Bitmap scaled = Bitmap.createScaledBitmap(bitmap, sw, sh, true);
+                        if (scaled != bitmap) {
+                            bitmap.recycle();
+                            bitmap = scaled;
+                        }
+                    }
                     ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos);
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos);
                     byte[] bytes = baos.toByteArray();
                     bitmap.recycle();
                     return "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP);

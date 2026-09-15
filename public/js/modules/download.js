@@ -14,7 +14,7 @@ import {
 import { startNativeDownload, renderResult, escapeHtml } from "../ui.js";
 import { cancelCurrentDownload } from "../ui/nativeDownload.js";
 import { showConfirm, hideConfirm } from "./modals.js";
-import { saveToHistory } from "./history.js";
+import { saveToHistory, safeSetHistory } from "./history.js";
 import { extractBatchUrls, analyzeUrlSilent } from "./batchManager.js";
 import {
   setTikTokSource,
@@ -204,7 +204,7 @@ downloadBtn.addEventListener("click", async () => {
               sourceUrl: data.result.sourceUrl || bUrl,
               title: decodedTitle,
               author: data.result.author || "Creator",
-              thumbnail: data.result.thumbnail || "",
+              thumbnail: (typeof data.result.thumbnail === "string" && data.result.thumbnail.startsWith("data:") && data.result.thumbnail.length > 25000) ? "" : (data.result.thumbnail || ""),
               downloads: data.result.downloads || [],
               date: new Date().toLocaleDateString("en-US", {
                 month: "short",
@@ -215,7 +215,7 @@ downloadBtn.addEventListener("click", async () => {
             };
 
             history.unshift(newHistoryItem);
-            localStorage.setItem("mori_history", JSON.stringify(history));
+            safeSetHistory(history);
             if (typeof updateGreeting === "function") updateGreeting();
           }
         } else {
