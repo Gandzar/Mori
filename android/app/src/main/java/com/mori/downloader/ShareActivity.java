@@ -347,6 +347,7 @@ public class ShareActivity extends AppCompatActivity {
                 result.put("status", res.code());
                 result.put("headers", resHeaders);
                 result.put("data", resData);
+                result.put("url", res.request().url().toString());
                 return result.toString();
 
             } catch (Exception e) {

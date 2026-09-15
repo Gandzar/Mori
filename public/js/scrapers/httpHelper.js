@@ -181,6 +181,7 @@ export async function scraperFetch(options, serverName = "Server") {
       status: parsed.status,
       headers: parsed.headers || {},
       data: parsed.data,
+      url: parsed.url || options.url,
     };
   } else if (nativeBridge?.httpRequest) {
     let fetchUrl = options.url;
@@ -208,6 +209,7 @@ export async function scraperFetch(options, serverName = "Server") {
       status: parsed.status,
       headers: parsed.headers || {},
       data: parsed.data,
+      url: parsed.url || options.url,
     };
   } else if (capHttp) {
     if (method === "POST") {
@@ -219,6 +221,7 @@ export async function scraperFetch(options, serverName = "Server") {
     } else {
       response = await capHttp.get(httpConfig);
     }
+    if (response && !response.url) response.url = options.url;
   } else if (invoke) {
     // Native Rust reqwest for Tauri Desktop (100% CORS-free)
     let fetchUrl = options.url;
@@ -254,6 +257,7 @@ export async function scraperFetch(options, serverName = "Server") {
       headers: headers,
       body: bodyString,
     });
+    if (response && !response.url) response.url = fetchUrl;
   } else {
     // Standard browser fetch fallback
     let fetchUrl = options.url;

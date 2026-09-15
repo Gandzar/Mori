@@ -33,8 +33,9 @@ async fn tauri_http_request(
         req = req.body(b.clone());
     }
 
-    let (status, text, res_headers) = match req.send().await {
+    let (status, text, res_headers, final_url) = match req.send().await {
         Ok(res) => {
+            let u = res.url().to_string();
             let s = res.status().as_u16();
             let mut hdrs = HashMap::new();
             for (k, v) in res.headers() {
@@ -43,7 +44,7 @@ async fn tauri_http_request(
                 }
             }
             let t = res.text().await.unwrap_or_default();
-            (s, t, hdrs)
+            (s, t, hdrs, u)
         }
         Err(_) => {
             // Reqwest network error, attempt curl fallback
@@ -68,7 +69,8 @@ async fn tauri_http_request(
     Ok(serde_json::json!({
         "status": status,
         "headers": res_headers,
-        "data": text
+        "data": text,
+        "url": final_url
     }))
 }
 

@@ -220,6 +220,7 @@ public class MainActivity extends BridgeActivity {
                 result.put("status", res.code());
                 result.put("headers", resHeaders);
                 result.put("data", resData);
+                result.put("url", res.request().url().toString());
                 return result.toString();
 
             } catch (Throwable e) {

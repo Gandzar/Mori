@@ -1,3 +1,4 @@
+// MORI CORE SCRAPER ENGINE — SECURE RUNTIME LOADER
 // Protected under GNU General Public License v3.0.
 // All rights reserved (C) 2026 coflyn.
 
@@ -5,6 +6,7 @@ import * as utils from "../utils/index.js";
 import * as urlUtils from "../utils/urlUtils.js";
 import * as core from "../modules/core.js";
 import { inflateSync } from "../vendor/inflate.min.js";
+import { scraperFetch } from "./httpHelper.js";
 
 export * from "./httpHelper.js";
 
@@ -14,6 +16,7 @@ window.__moriDeps = { utils, urlUtils, core };
 let _corePromise = null;
 
 async function obtainEngineSecret(challenge) {
+  // 1. Android Native Bridge (Main or Share Bridge)
   const androidBridge = window.MoriMainBridge || window.MoriShareBridge;
   if (typeof androidBridge?.getEngineSecurityKey === "function") {
     try {
@@ -27,23 +30,14 @@ async function obtainEngineSecret(challenge) {
     }
   }
 
-  if (
-    window.__TAURI__?.core?.invoke ||
-    window.__TAURI_INTERNALS__?.invoke ||
-    window.__TAURI__?.invoke
-  ) {
-    const invoke =
-      window.__TAURI__?.core?.invoke ||
-      window.__TAURI_INTERNALS__?.invoke ||
-      window.__TAURI__?.invoke;
+  // 2. Desktop Tauri Native Bridge (Rust machine code / precompiled static binary)
+  if (window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.invoke) {
+    const invoke = window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.invoke;
     try {
       const hex = await invoke("tauri_get_engine_key", { challenge });
       if (hex && hex.length >= 32) return hex;
     } catch (e) {
-      console.error(
-        "[Mori Engine] Native desktop security verification failed:",
-        e,
-      );
+      console.error("[Mori Engine] Native desktop security verification failed:", e);
     }
   }
 
@@ -56,6 +50,7 @@ async function loadCoreScrapers() {
     try {
       let arrayBuf = null;
 
+      // 1. Android Native Bridge direct asset read (Instant & 100% reliable on file:// scheme)
       const androidBridge = window.MoriMainBridge || window.MoriShareBridge;
       if (typeof androidBridge?.getScrapersBinaryBase64 === "function") {
         try {
@@ -70,24 +65,16 @@ async function loadCoreScrapers() {
         } catch (_) {}
       }
 
-      if (
-        !arrayBuf &&
-        (window.__TAURI__?.core?.invoke ||
-          window.__TAURI_INTERNALS__?.invoke ||
-          window.__TAURI__?.invoke)
-      ) {
-        const invoke =
-          window.__TAURI__?.core?.invoke ||
-          window.__TAURI_INTERNALS__?.invoke ||
-          window.__TAURI__?.invoke;
+      // 2. Desktop Tauri Native Bridge
+      if (!arrayBuf && (window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.invoke)) {
+        const invoke = window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.invoke;
         try {
-          const rawBytes = await invoke("tauri_read_file_bytes", {
-            path: "public/js/scrapers.bin",
-          });
+          const rawBytes = await invoke("tauri_read_file_bytes", { path: "public/js/scrapers.bin" });
           arrayBuf = new Uint8Array(rawBytes).buffer;
         } catch (_) {}
       }
 
+      // 3. Capacitor Filesystem Plugin
       if (!arrayBuf && window.Capacitor?.Plugins?.Filesystem) {
         try {
           const fs = window.Capacitor.Plugins.Filesystem;
@@ -102,13 +89,9 @@ async function loadCoreScrapers() {
         } catch (_) {}
       }
 
+      // 4. Relative Fetch API
       if (!arrayBuf) {
-        const binUrls = [
-          "js/scrapers.bin",
-          "/js/scrapers.bin",
-          "./js/scrapers.bin",
-          "file:///android_asset/public/js/scrapers.bin",
-        ];
+        const binUrls = ["js/scrapers.bin", "/js/scrapers.bin", "./js/scrapers.bin", "file:///android_asset/public/js/scrapers.bin"];
         for (const u of binUrls) {
           try {
             const res = await fetch(u);
@@ -120,51 +103,40 @@ async function loadCoreScrapers() {
         }
       }
 
+      // 5. XMLHttpRequest Fallback (Works on file:///android_asset/... in WebView)
       if (!arrayBuf && typeof XMLHttpRequest !== "undefined") {
-        const tryXhr = (url) =>
-          new Promise((resolve) => {
-            try {
-              const xhr = new XMLHttpRequest();
-              xhr.open("GET", url, true);
-              xhr.responseType = "arraybuffer";
-              xhr.onload = () => {
-                if (
-                  xhr.status === 200 ||
-                  (xhr.status === 0 &&
-                    xhr.response &&
-                    xhr.response.byteLength > 0)
-                ) {
-                  resolve(xhr.response);
-                } else {
-                  resolve(null);
-                }
-              };
-              xhr.onerror = () => resolve(null);
-              xhr.send();
-            } catch (_) {
-              resolve(null);
-            }
-          });
-        for (const u of [
-          "js/scrapers.bin",
-          "./js/scrapers.bin",
-          "file:///android_asset/public/js/scrapers.bin",
-        ]) {
+        const tryXhr = (url) => new Promise((resolve) => {
+          try {
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", url, true);
+            xhr.responseType = "arraybuffer";
+            xhr.onload = () => {
+              if (xhr.status === 200 || (xhr.status === 0 && xhr.response && xhr.response.byteLength > 0)) {
+                resolve(xhr.response);
+              } else {
+                resolve(null);
+              }
+            };
+            xhr.onerror = () => resolve(null);
+            xhr.send();
+          } catch (_) {
+            resolve(null);
+          }
+        });
+        for (const u of ["js/scrapers.bin", "./js/scrapers.bin", "file:///android_asset/public/js/scrapers.bin"]) {
           arrayBuf = await tryXhr(u);
           if (arrayBuf) break;
         }
       }
 
-      if (!arrayBuf)
-        throw new Error("Could not locate scrapers.bin binary payload");
+      if (!arrayBuf) throw new Error("Could not locate scrapers.bin binary payload");
 
       const bytes = new Uint8Array(arrayBuf);
-
+      
       // Dynamic handshake with native security layer
-      const challenge =
-        Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+      const challenge = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
       const hexKey = await obtainEngineSecret(challenge);
-
+      
       if (!hexKey || hexKey.length < 32) {
         throw new Error("Security verification handshake failed");
       }
@@ -194,9 +166,7 @@ async function loadCoreScrapers() {
             const writer = ds.writable.getWriter();
             writer.write(deobf);
             writer.close();
-            const decompressedBuf = await new Response(
-              ds.readable,
-            ).arrayBuffer();
+            const decompressedBuf = await new Response(ds.readable).arrayBuffer();
             scriptText = new TextDecoder().decode(decompressedBuf);
           } catch (dsErr) {
             console.error("[Mori Engine] Decompression failed:", dsErr);
@@ -208,10 +178,7 @@ async function loadCoreScrapers() {
       }
 
       // Execute and return the exports safely
-      const fn = new Function(
-        scriptText +
-          "\nreturn typeof __MoriCoreScrapers !== 'undefined' ? __MoriCoreScrapers : window.__MoriCoreScrapers;",
-      );
+      const fn = new Function(scriptText + "\nreturn typeof __MoriCoreScrapers !== 'undefined' ? __MoriCoreScrapers : window.__MoriCoreScrapers;");
       const mod = fn();
 
       if (!mod) {
@@ -228,65 +195,77 @@ async function loadCoreScrapers() {
   return _corePromise;
 }
 
-export async function scrapeTikTok(...args) {
-  return (await loadCoreScrapers()).scrapeTikTok(...args);
-}
-export function setTikTokSource(...args) {
-  loadCoreScrapers().then((m) => m.setTikTokSource(...args));
-}
+export async function scrapeTikTok(...args) { return (await loadCoreScrapers()).scrapeTikTok(...args); }
+export function setTikTokSource(...args) { loadCoreScrapers().then(m => m.setTikTokSource(...args)); }
 
-export async function scrapeYouTube(...args) {
-  return (await loadCoreScrapers()).scrapeYouTube(...args);
-}
-export function setYouTubeSource(...args) {
-  loadCoreScrapers().then((m) => m.setYouTubeSource(...args));
-}
+export async function scrapeYouTube(...args) { return (await loadCoreScrapers()).scrapeYouTube(...args); }
+export function setYouTubeSource(...args) { loadCoreScrapers().then(m => m.setYouTubeSource(...args)); }
 
-export async function scrapeInstagram(...args) {
-  return (await loadCoreScrapers()).scrapeInstagram(...args);
-}
-export function setInstagramSource(...args) {
-  loadCoreScrapers().then((m) => m.setInstagramSource(...args));
-}
+export async function scrapeInstagram(...args) { return (await loadCoreScrapers()).scrapeInstagram(...args); }
+export function setInstagramSource(...args) { loadCoreScrapers().then(m => m.setInstagramSource(...args)); }
 
-export async function scrapeTwitter(...args) {
-  return (await loadCoreScrapers()).scrapeTwitter(...args);
-}
-export function setTwitterSource(...args) {
-  loadCoreScrapers().then((m) => m.setTwitterSource(...args));
-}
+export async function scrapeTwitter(...args) { return (await loadCoreScrapers()).scrapeTwitter(...args); }
+export function setTwitterSource(...args) { loadCoreScrapers().then(m => m.setTwitterSource(...args)); }
 
-export async function scrapeSpotify(...args) {
-  return (await loadCoreScrapers()).scrapeSpotify(...args);
-}
-export function setSpotifySource(...args) {
-  loadCoreScrapers().then((m) => m.setSpotifySource(...args));
-}
+export async function scrapeSpotify(...args) { return (await loadCoreScrapers()).scrapeSpotify(...args); }
+export function setSpotifySource(...args) { loadCoreScrapers().then(m => m.setSpotifySource(...args)); }
 
-export async function scrapeBilibili(...args) {
-  return (await loadCoreScrapers()).scrapeBilibili(...args);
+export async function scrapeBilibili(...args) { return (await loadCoreScrapers()).scrapeBilibili(...args); }
+export async function scrapePixiv(...args) { return (await loadCoreScrapers()).scrapePixiv(...args); }
+export async function scrapeRedNote(...args) { return (await loadCoreScrapers()).scrapeRedNote(...args); }
+export async function scrapeDouyin(url, ...rest) {
+  const originalUrl = url;
+  let targetUrl = url;
+
+  if (typeof url === "string" && (url.includes("v.douyin.com") || url.includes("/share/slides/"))) {
+    try {
+      let resolvedUrl = url;
+      if (url.includes("v.douyin.com")) {
+        const fetchRes = await scraperFetch({
+          url,
+          method: "GET",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+          },
+          rawResponse: true
+        }, "Douyin Resolver");
+        if (fetchRes?.url) resolvedUrl = fetchRes.url;
+      }
+
+      const slidesMatch = resolvedUrl.match(new RegExp("share/slides/([0-9]{15,22})", "i"));
+      if (slidesMatch && slidesMatch[1]) {
+        targetUrl = "https://www.iesdouyin.com/share/video/" + slidesMatch[1] + "/";
+      } else if (resolvedUrl && resolvedUrl !== url) {
+        targetUrl = resolvedUrl;
+      }
+    } catch (e) {
+      console.warn("[Mori Engine] Douyin resolver warning:", e);
+    }
+  }
+
+  const core = await loadCoreScrapers();
+  let res;
+  try {
+    res = await core.scrapeDouyin(targetUrl, ...rest);
+    if (!res || !res.status) {
+      await new Promise(r => setTimeout(r, 400));
+      res = await core.scrapeDouyin(targetUrl, ...rest);
+    }
+  } catch (err) {
+    await new Promise(r => setTimeout(r, 400));
+    res = await core.scrapeDouyin(targetUrl, ...rest);
+  }
+
+  if (res) {
+    if (res.result) res.result.sourceUrl = originalUrl;
+    if (res.data) res.data.sourceUrl = originalUrl;
+    res.sourceUrl = originalUrl;
+  }
+  return res;
 }
-export async function scrapePixiv(...args) {
-  return (await loadCoreScrapers()).scrapePixiv(...args);
-}
-export async function scrapeRedNote(...args) {
-  return (await loadCoreScrapers()).scrapeRedNote(...args);
-}
-export async function scrapeDouyin(...args) {
-  return (await loadCoreScrapers()).scrapeDouyin(...args);
-}
-export async function scrapeThreads(...args) {
-  return (await loadCoreScrapers()).scrapeThreads(...args);
-}
-export async function scrapePinterest(...args) {
-  return (await loadCoreScrapers()).scrapePinterest(...args);
-}
-export async function scrapeAppleMusic(...args) {
-  return (await loadCoreScrapers()).scrapeAppleMusic(...args);
-}
-export async function scrapeFacebook(...args) {
-  return (await loadCoreScrapers()).scrapeFacebook(...args);
-}
-export async function scrapeBandcamp(...args) {
-  return (await loadCoreScrapers()).scrapeBandcamp(...args);
-}
+export async function scrapeThreads(...args) { return (await loadCoreScrapers()).scrapeThreads(...args); }
+export async function scrapePinterest(...args) { return (await loadCoreScrapers()).scrapePinterest(...args); }
+export async function scrapeAppleMusic(...args) { return (await loadCoreScrapers()).scrapeAppleMusic(...args); }
+export async function scrapeFacebook(...args) { return (await loadCoreScrapers()).scrapeFacebook(...args); }
+export async function scrapeBandcamp(...args) { return (await loadCoreScrapers()).scrapeBandcamp(...args); }
