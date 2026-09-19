@@ -74,6 +74,96 @@ async fn tauri_http_request(
     }))
 }
 
+fn resolve_desktop_directory(folder: Option<&str>) -> std::path::PathBuf {
+    let download_dir = dirs::download_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    match folder {
+        Some(f) if !f.trim().is_empty() => {
+            let mut trimmed = f.trim().to_string();
+
+            if trimmed.starts_with('~') {
+                if let Some(home) = dirs::home_dir() {
+                    let sub = trimmed.trim_start_matches('~').trim_start_matches('/').trim_start_matches('\\');
+                    trimmed = home.join(sub).to_string_lossy().to_string();
+                }
+            }
+
+            #[cfg(unix)]
+            {
+                if (trimmed.starts_with("Users/")
+                    || trimmed.starts_with("home/")
+                    || trimmed.starts_with("Volumes/")
+                    || trimmed.starts_with("private/")
+                    || trimmed.starts_with("var/")
+                    || trimmed.starts_with("tmp/"))
+                    && !trimmed.starts_with('/')
+                {
+                    trimmed = format!("/{}", trimmed);
+                }
+            }
+
+            let path_obj = std::path::Path::new(&trimmed);
+            let normalized = trimmed.replace('\\', "/");
+            let norm_lower = normalized.to_lowercase();
+            let norm_check = norm_lower.trim_start_matches('/');
+
+            if norm_check.starts_with("movies/") || norm_check.starts_with("videos/") || norm_check == "movies" || norm_check == "videos" {
+                let base = dirs::video_dir().unwrap_or_else(|| download_dir.clone());
+                let sub = normalized.trim_start_matches('/');
+                if sub.contains('/') {
+                    base.join(&sub[sub.find('/').unwrap() + 1..])
+                } else {
+                    base
+                }
+            } else if norm_check.starts_with("music/") || norm_check.starts_with("audio/") || norm_check == "music" || norm_check == "audio" {
+                let base = dirs::audio_dir().unwrap_or_else(|| download_dir.clone());
+                let sub = normalized.trim_start_matches('/');
+                if sub.contains('/') {
+                    base.join(&sub[sub.find('/').unwrap() + 1..])
+                } else {
+                    base
+                }
+            } else if norm_check.starts_with("pictures/") || norm_check.starts_with("photos/") || norm_check == "pictures" || norm_check == "photos" {
+                let base = dirs::picture_dir().unwrap_or_else(|| download_dir.clone());
+                let sub = normalized.trim_start_matches('/');
+                if sub.contains('/') {
+                    base.join(&sub[sub.find('/').unwrap() + 1..])
+                } else {
+                    base
+                }
+            } else if norm_check.starts_with("documents/") || norm_check == "documents" {
+                let base = dirs::document_dir().unwrap_or_else(|| download_dir.clone());
+                let sub = normalized.trim_start_matches('/');
+                if sub.contains('/') {
+                    base.join(&sub[sub.find('/').unwrap() + 1..])
+                } else {
+                    base
+                }
+            } else if norm_check.starts_with("desktop/") || norm_check == "desktop" {
+                let base = dirs::desktop_dir().unwrap_or_else(|| download_dir.clone());
+                let sub = normalized.trim_start_matches('/');
+                if sub.contains('/') {
+                    base.join(&sub[sub.find('/').unwrap() + 1..])
+                } else {
+                    base
+                }
+            } else if norm_check.starts_with("downloads/") || norm_check.starts_with("download/") || norm_check == "downloads" || norm_check == "download" {
+                let base = download_dir;
+                let sub = normalized.trim_start_matches('/');
+                if sub.contains('/') {
+                    base.join(&sub[sub.find('/').unwrap() + 1..])
+                } else {
+                    base
+                }
+            } else if path_obj.is_absolute() {
+                path_obj.to_path_buf()
+            } else {
+                download_dir.join(&trimmed)
+            }
+        }
+        _ => download_dir.join("Mori"),
+    }
+}
+
 #[tauri::command]
 async fn tauri_download_file(
     url: String,
@@ -97,19 +187,7 @@ async fn tauri_download_file(
         }
     }
 
-    let download_dir = dirs::download_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let mut target_dir = download_dir.join("Mori");
-
-    if let Some(f) = folder {
-        let trimmed = f.trim();
-        if !trimmed.is_empty() {
-            if trimmed.starts_with("Mori/") || trimmed.starts_with("Mori\\") {
-                target_dir = download_dir.join(trimmed);
-            } else if trimmed != "Mori" {
-                target_dir = target_dir.join(trimmed);
-            }
-        }
-    }
+    let target_dir = resolve_desktop_directory(folder.as_deref());
 
     std::fs::create_dir_all(&target_dir).map_err(|e| format!("Directory error: {}", e))?;
     let (stem, ext) = {
@@ -191,6 +269,23 @@ async fn tauri_read_file_bytes(path: String) -> Result<Vec<u8>, String> {
         return Ok(bytes);
     }
 
+    #[cfg(unix)]
+    {
+        if (clean_path.starts_with("Users/")
+            || clean_path.starts_with("home/")
+            || clean_path.starts_with("Volumes/")
+            || clean_path.starts_with("private/")
+            || clean_path.starts_with("var/")
+            || clean_path.starts_with("tmp/"))
+            && !clean_path.starts_with('/')
+        {
+            let fixed = format!("/{}", clean_path);
+            if let Ok(bytes) = std::fs::read(&fixed) {
+                return Ok(bytes);
+            }
+        }
+    }
+
     // Strip Android prefix if present
     let stripped = clean_path
         .replace("storage/emulated/0/", "")
@@ -263,19 +358,7 @@ async fn tauri_save_bytes_file(
     filename: String,
     folder: Option<String>,
 ) -> Result<String, String> {
-    let download_dir = dirs::download_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let mut target_dir = download_dir.join("Mori");
-
-    if let Some(f) = folder {
-        let trimmed = f.trim();
-        if !trimmed.is_empty() {
-            if trimmed.starts_with("Mori/") || trimmed.starts_with("Mori\\") {
-                target_dir = download_dir.join(trimmed);
-            } else if trimmed != "Mori" {
-                target_dir = target_dir.join(trimmed);
-            }
-        }
-    }
+    let target_dir = resolve_desktop_directory(folder.as_deref());
 
     std::fs::create_dir_all(&target_dir).map_err(|e| format!("Directory error: {}", e))?;
     let (stem, ext) = {
@@ -331,19 +414,7 @@ async fn tauri_open_url(url: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn tauri_get_folder_size(folder: Option<String>) -> Result<u64, String> {
-    let download_dir = dirs::download_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let mut target_dir = download_dir.join("Mori");
-
-    if let Some(f) = folder {
-        let trimmed = f.trim();
-        if !trimmed.is_empty() {
-            if trimmed.starts_with("Mori/") || trimmed.starts_with("Mori\\") {
-                target_dir = download_dir.join(trimmed);
-            } else if trimmed != "Mori" {
-                target_dir = target_dir.join(trimmed);
-            }
-        }
-    }
+    let target_dir = resolve_desktop_directory(folder.as_deref());
 
     fn dir_size(path: &std::path::Path) -> u64 {
         let mut total = 0;
@@ -362,6 +433,69 @@ async fn tauri_get_folder_size(folder: Option<String>) -> Result<u64, String> {
     }
 
     Ok(dir_size(&target_dir))
+}
+
+#[tauri::command]
+async fn tauri_pick_folder() -> Result<Option<String>, String> {
+    let folder = rfd::AsyncFileDialog::new()
+        .set_title("Select Download Directory")
+        .pick_folder()
+        .await;
+    Ok(folder.map(|f| f.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+async fn tauri_open_folder(path: String) -> Result<(), String> {
+    let mut clean_path = path.trim().to_string();
+    if clean_path.starts_with("file:///") {
+        clean_path = clean_path[7..].to_string();
+    } else if clean_path.starts_with("file://") {
+        clean_path = clean_path[7..].to_string();
+    }
+    #[cfg(unix)]
+    {
+        if (clean_path.starts_with("Users/")
+            || clean_path.starts_with("home/")
+            || clean_path.starts_with("Volumes/")
+            || clean_path.starts_with("private/"))
+            && !clean_path.starts_with('/')
+        {
+            clean_path = format!("/{}", clean_path);
+        }
+    }
+    let p = std::path::PathBuf::from(&clean_path);
+    let resolved_p = if p.is_absolute() {
+        p
+    } else {
+        resolve_desktop_directory(Some(&clean_path))
+    };
+    let target = if resolved_p.is_file() {
+        resolved_p.parent().unwrap_or(&resolved_p).to_path_buf()
+    } else {
+        resolved_p
+    };
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 mod engine_sec;
@@ -383,6 +517,8 @@ pub fn run() {
         tauri_save_bytes_file,
         tauri_open_url,
         tauri_get_folder_size,
+        tauri_pick_folder,
+        tauri_open_folder,
         tauri_get_engine_key
     ])
     .setup(|app| {

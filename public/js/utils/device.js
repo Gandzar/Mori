@@ -133,3 +133,111 @@ export async function releaseWakeLock() {
     console.log("[WAKE LOCK] Screen active lock released.");
   }
 }
+
+// Native Folder Picker Helper (macOS, Windows, Android)
+export async function pickNativeFolder() {
+  // 1. Desktop Tauri (macOS & Windows)
+  const tauriInvoke =
+    window.__TAURI__?.core?.invoke ||
+    window.__TAURI_INTERNALS__?.invoke ||
+    window.__TAURI__?.invoke;
+
+  if (tauriInvoke) {
+    try {
+      const res = await tauriInvoke("tauri_pick_folder");
+      return res || null;
+    } catch (e) {
+      console.warn("Tauri pick folder error:", e);
+      return null;
+    }
+  }
+
+  // 2. Android
+  if (window.MoriMainBridge?.pickFolder) {
+    return new Promise((resolve) => {
+      const callbackId = "folder_" + Date.now();
+      window.__moriFolderCallback = window.__moriFolderCallback || {};
+      window.__moriFolderCallback[callbackId] = (folderPath) => {
+        delete window.__moriFolderCallback[callbackId];
+        resolve(folderPath || null);
+      };
+      window.MoriMainBridge.pickFolder(callbackId);
+    });
+  }
+
+  return null;
+}
+
+// Native Folder Opener Helper (Finder / Explorer / Files app)
+export async function openNativeFolder(targetPath) {
+  if (!targetPath) return false;
+
+  // 1. Desktop Tauri (macOS & Windows)
+  const tauriInvoke =
+    window.__TAURI__?.core?.invoke ||
+    window.__TAURI_INTERNALS__?.invoke ||
+    window.__TAURI__?.invoke;
+
+  if (tauriInvoke) {
+    try {
+      await tauriInvoke("tauri_open_folder", { path: targetPath });
+      return true;
+    } catch (e) {
+      console.warn("Tauri open folder error:", e);
+    }
+  }
+
+  // 2. Android
+  if (window.MoriMainBridge?.openFolder) {
+    try {
+      const res = window.MoriMainBridge.openFolder(targetPath);
+      if (res) return true;
+    } catch (_) {}
+  }
+
+  // 3. iOS (Open native Files app)
+  if (window.Capacitor?.getPlatform?.() === "ios") {
+    try {
+      window.location.href = "shareddocuments://";
+      return true;
+    } catch (_) {}
+  }
+
+  return false;
+}
+
+// Path normalization helpers for cross-platform storage paths
+export function normalizeSavedPath(p) {
+  if (!p) return "";
+  let trimmed = p.trim();
+  const isAndroid = window.Capacitor?.getPlatform?.() === "android";
+  if (!isAndroid) {
+    if (/^(Users|home|Volumes|private|var|tmp)[/\\]/i.test(trimmed) && !trimmed.startsWith("/")) {
+      trimmed = `/${trimmed}`;
+    }
+  }
+  return trimmed;
+}
+
+export function normalizePathInput(val) {
+  if (!val) return "";
+  let trimmed = val.trim();
+  const isAndroid = window.Capacitor?.getPlatform?.() === "android";
+
+  if (isAndroid) {
+    if (trimmed.startsWith("/storage/emulated/0/")) {
+      return trimmed.replace(/[/\\]+$/, "");
+    }
+    return trimmed.replace(/^[/\\]+|[/\\]+$/g, "");
+  }
+
+  // Desktop (macOS, Windows, Linux)
+  if (/^(Users|home|Volumes|private|var|tmp)[/\\]/i.test(trimmed) && !trimmed.startsWith("/")) {
+    trimmed = `/${trimmed}`;
+  }
+  if (trimmed.startsWith("/") || /^[a-zA-Z]:[/\\]/.test(trimmed)) {
+    return trimmed.replace(/[/\\]+$/, "");
+  }
+  return trimmed.replace(/^[/\\]+|[/\\]+$/g, "");
+}
+

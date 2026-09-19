@@ -13,6 +13,8 @@ android/app/src/main/assets/public
 *.aab
 *.ipa
 *.dmg
+*.tar
+*.gz
 *.xcarchive
 *.keystore
 android/captures/

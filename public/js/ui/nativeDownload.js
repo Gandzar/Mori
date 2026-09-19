@@ -10,6 +10,7 @@ import {
   requestWakeLock,
   releaseWakeLock,
   checkWifiOnlyGuard,
+  normalizePathInput,
 } from "../utils/index.js";
 import { currentLang } from "../modules/core.js";
 import {
@@ -263,14 +264,40 @@ export async function startNativeDownload(
     let fileName = generateFileName(sanitizedTitle, ext, sourceUrl, url);
 
     const isAudio = /mp3|audio|128k|48k|m4a|wav|flac/i.test(type);
-    const videoSubfolder =
-      localStorage.getItem("mori_download_path") || "Mori";
-    const musicSubfolder =
-      localStorage.getItem("mori_music_path") || "Mori/Music";
-    const targetFolder = isAudio ? musicSubfolder : videoSubfolder;
-    let fullPath = isAudio
-      ? `Download/${musicSubfolder}`
-      : `Download/${videoSubfolder}`;
+    const rawVideoFolder = (localStorage.getItem("mori_download_path") || "").trim();
+    const rawMusicFolder = (localStorage.getItem("mori_music_path") || "").trim();
+
+    const isAndroid = window.Capacitor?.getPlatform?.() === "android";
+    const hasAllFiles = isAndroid && window.MoriMainBridge?.hasAllFilesPermission
+      ? window.MoriMainBridge.hasAllFilesPermission()
+      : true;
+
+    const defaultVideoFolder = "Download/Mori";
+    const defaultMusicFolder = isAndroid ? "Download/Mori/Music" : "Music/Mori";
+
+    let targetFolder = isAudio
+      ? (rawMusicFolder || defaultMusicFolder)
+      : (rawVideoFolder || defaultVideoFolder);
+
+    if (targetFolder === "Mori") {
+      targetFolder = defaultVideoFolder;
+    } else if (targetFolder === "Mori/Music") {
+      targetFolder = defaultMusicFolder;
+    }
+
+    targetFolder =
+      normalizePathInput(targetFolder) ||
+      (isAudio ? defaultMusicFolder : defaultVideoFolder);
+
+    // Android Scoped Storage fallback:
+    // If All Files Access is not granted, automatically save into Download/Mori default
+    if (isAndroid && !hasAllFiles) {
+      if (!targetFolder.toLowerCase().startsWith("download")) {
+        targetFolder = isAudio ? "Download/Mori/Music" : "Download/Mori";
+      }
+    }
+
+    let fullPath = targetFolder;
 
     // Auto-Categorize Subfolder per Platform
     if (localStorage.getItem("mori_auto_folder") !== "false") {
