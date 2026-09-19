@@ -45,6 +45,7 @@ export default {
   "concurrent-5": "5개 동시",
   "confirm-msg-default": "계속 진행하시겠습니까?",
   "confirm-reset-settings": "모든 설정을 기본값으로 되돌릴까요? 히스토리와 다운로드된 파일은 삭제되지 않습니다.",
+  "confirm-reset-scraper": "스크래퍼 코어를 앱 기본 버전으로 되돌리시겠습니까? 다운로드된 OTA 패치가 제거됩니다.",
   "confirm-title-default": "작업 확인",
   "corner-modern": "모던 (10px)",
   "corner-round": "둥글게 (20px)",

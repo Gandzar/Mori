@@ -46,6 +46,7 @@ export default {
   "concurrent-5": "5同時",
   "confirm-msg-default": "続行してもよろしいですか？",
   "confirm-reset-settings": "すべての設定をデフォルトに戻しますか？履歴とダウンロードファイルは削除されません。",
+  "confirm-reset-scraper": "スクレイパーコアをアプリ同梱の初期バージョンに戻しますか？ダウンロード済みのOTAパッチは削除されます。",
   "confirm-title-default": "確認",
   "corner-modern": "モダン (10px)",
   "corner-round": "丸み (20px)",

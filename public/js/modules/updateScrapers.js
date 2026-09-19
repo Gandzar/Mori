@@ -1,7 +1,7 @@
 import { CapacitorHttp, showToast } from "../utils/index.js";
 import { APP_VERSION, GITHUB_REPO, currentLang } from "./core.js";
 import { translations, t } from "../i18n/index.js";
-import { showInfoModal } from "./modals.js";
+import { showInfoModal, showConfirm } from "./modals.js";
 import { BUNDLED_SCRAPER_VERSION } from "../scrapers/index.js";
 
 export const SCRAPER_VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/public/scrapers-version.json`;
@@ -208,8 +208,24 @@ export async function checkScraperUpdate(isManual = false) {
       if (isManual) {
         const lang = translations[currentLang] || {};
         const title = lang["label-scraper-uptodate-title"] || "Scraper Core";
-        const desc = `${lang["label-scraper-uptodate-desc"] || "Scraper core is already up to date."} (v${currentVer})`;
+        const hasPatch = !!localStorage.getItem(PATCHED_SCRAPER_BIN_KEY);
+
+        let desc = `${lang["label-scraper-uptodate-desc"] || "Scraper core is already up to date."} (v${currentVer})`;
+        if (hasPatch) {
+          desc += `<br><br><span id="rollbackScraperLink" style="color:var(--primary);text-decoration:underline;font-weight:600;cursor:pointer;">${lang["btn-reset-default"] || "RESET TO DEFAULT"}</span>`;
+        }
         showInfoModal(title, desc);
+
+        if (hasPatch) {
+          setTimeout(() => {
+            const rollbackBtn = document.getElementById("rollbackScraperLink");
+            if (rollbackBtn) {
+              rollbackBtn.onclick = () => {
+                promptResetScraper();
+              };
+            }
+          }, 50);
+        }
       }
     }
   } catch (err) {
@@ -218,19 +234,45 @@ export async function checkScraperUpdate(isManual = false) {
     if (isManual) {
       const lang = translations[currentLang] || {};
       const title = lang["label-check-failed"] || "Check Failed";
-      const desc =
+      const hasPatch = !!localStorage.getItem(PATCHED_SCRAPER_BIN_KEY);
+      let desc =
         lang["label-check-failed-msg"] ||
         "Unable to reach update server. Please check your internet connection.";
+      if (hasPatch) {
+        desc += `<br><br><span id="rollbackScraperLinkErr" style="color:var(--primary);text-decoration:underline;font-weight:600;cursor:pointer;">${lang["btn-reset-default"] || "RESET TO DEFAULT"}</span>`;
+      }
       showInfoModal(title, desc);
+
+      if (hasPatch) {
+        setTimeout(() => {
+          const rollbackBtn = document.getElementById("rollbackScraperLinkErr");
+          if (rollbackBtn) {
+            rollbackBtn.onclick = () => {
+              promptResetScraper();
+            };
+          }
+        }, 50);
+      }
     }
   }
+}
+
+export function promptResetScraper() {
+  const lang = translations[currentLang] || {};
+  showConfirm(
+    lang["label-scraper-version"] || "Scraper Core",
+    lang["confirm-reset-scraper"] || "Reset scraper core back to bundled baseline version? Any downloaded OTA patch will be removed.",
+    () => {
+      resetScrapersToDefault();
+    }
+  );
 }
 
 export function resetScrapersToDefault() {
   localStorage.removeItem(PATCHED_SCRAPER_BIN_KEY);
   localStorage.removeItem(ACTIVE_SCRAPER_VERSION_KEY);
   updateScraperVersionUI();
-  showToast?.("Scraper reset to bundle default. Reloading...");
+  showToast?.("Scraper reset to default. Reloading...");
   setTimeout(() => window.location.reload(), 600);
 }
 

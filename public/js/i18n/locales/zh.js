@@ -46,6 +46,7 @@ export default {
   "concurrent-5": "5个同时",
   "confirm-msg-default": "您确定要继续吗？",
   "confirm-reset-settings": "将所有设置重置为默认值？这不会删除您的历史记录或下载的文件。",
+  "confirm-reset-scraper": "将解析引擎核心重置为内置初始版本？已下载的 OTA 补丁将被移除。",
   "confirm-title-default": "确认操作",
   "corner-modern": "现代 (10px)",
   "corner-round": "圆润 (20px)",

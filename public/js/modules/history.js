@@ -386,8 +386,8 @@ window.addEventListener("mori_file_saved", async (e) => {
               localThumbnail: localThumbnail,
               thumbnail: keepOriginalThumb,
               thumbVersion: 3,
-              versionCode: 18,
-              versionName: "4.3.2",
+              versionCode: 19,
+              versionName: "4.3.3",
               thumbRepaired: true,
             };
           }

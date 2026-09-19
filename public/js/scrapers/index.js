@@ -221,12 +221,17 @@ async function loadCoreScrapers() {
 
       if (!scriptText) throw new Error("Could not decompress Mori scraper bytecode");
 
-      const runCore = new Function(scriptText);
-      runCore();
+      const fn = new Function(
+        scriptText +
+          "\nreturn typeof __MoriCoreScrapers !== 'undefined' ? __MoriCoreScrapers : (typeof window !== 'undefined' ? window.__MoriCoreScrapers : null);"
+      );
+      const mod = fn();
 
-      if (!window.__MoriCoreScrapers) {
+      if (!mod) {
         throw new Error("Mori Engine: Failed to instantiate core scraper modules.");
       }
+
+      window.__MoriCoreScrapers = mod;
 
       console.log(`[Mori Engine] Core scrapers initialized successfully (${isFromOtaPatch ? "OTA Patch" : "Bundled"} v${window.__MORI_BUNDLED_SCRAPER_VERSION__}).`);
       return window.__MoriCoreScrapers;

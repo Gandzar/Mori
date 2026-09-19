@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.3.3] - 2026-09-20
+
+### Added
+
+- **Over-The-Air (OTA) Scraper Updates**: Hot-patch scrapers dynamically without reinstalling the app.
+- **Scraper Core Rollback**: Revert active OTA patches back to the bundled baseline with a confirmation modal.
+- **Scraper Version Management**: Live version indicator and manual check button in Settings.
+- **Custom Storage Directory**: Select custom download folders across Android (SAF), Desktop (native dialogs), and iOS.
+- **Native Folder Opener**: Open saved media locations directly in system file managers (Finder, Explorer, Android Files, and iOS Files app).
+- **Android All Files Access**: Optional storage permission for arbitrary directories with real-time status and auto-fallback.
+- **Desktop Media Streaming**: Stream and play downloaded media from custom paths in Desktop player.
+
+### Changed
+
+- **Native Security Architecture**: Precompiled native binaries (`morisec.obj`, `libmorisec.a`, `morisec.xcframework`) linked via native FFI across Windows, macOS, and iOS.
+- **Deterministic Scraper Versioning**: Engine version now only increments when extractor source logic changes.
+- **Safe-Mode Auto Recovery**: Automatically purges invalid patches and falls back to bundled core without crashes.
+- **Localization**: Added full translation support across all 9 languages for scraper updates and reset confirmation.
+
+### Fixed
+
+- **Desktop Native Security Verification**: Resolved verification failure on Windows and macOS Tauri.
+- **iOS Native Security Verification**: Resolved false-positive security error on iOS via native binary bridge.
+- **iOS Video Thumbnails**: Replaced broken placeholders with native AVFoundation extraction and auto-healing for existing history.
+- **Android History Quota**: Optimized thumbnail dimensions by ~97% and added auto-recovery pruning to prevent storage quota crashes.
+- **Android WebView Decompression**: Resolved deflate-raw decompression errors on older WebViews using an ESM inflate fallback.
+- **Desktop Path Resolution**: Fixed duplicate nested directories by preserving leading slashes and expanding tildes (`~`).
+- **Douyin Parsing**: Fixed album and slides extraction by resolving final redirect URLs in native bridges (#13).
+- **Android Share Overlay**: Fixed syntax error and scope mismatch in history saving.
+
+---
+
 ## [4.3.2] - 2026-09-11
 
 ### Added

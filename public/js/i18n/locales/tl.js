@@ -45,6 +45,7 @@ export default {
   "concurrent-5": "5 nang sabay",
   "confirm-msg-default": "Sigurado ka bang nais mong magpatuloy?",
   "confirm-reset-settings": "Ibalik ang lahat ng setting sa default? Hindi mabubura ang iyong kasaysayan o mga na-download na file.",
+  "confirm-reset-scraper": "Ibalik ang scraper core sa default na bersyon ng app? Aalisin ang anumang na-download na OTA patch.",
   "confirm-title-default": "Kumpirmahin ang Aksyon",
   "corner-modern": "Moderno (10px)",
   "corner-round": "Pabilog (20px)",

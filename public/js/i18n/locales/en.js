@@ -46,6 +46,7 @@ export default {
   "concurrent-5": "5 at once",
   "confirm-msg-default": "Are you sure you want to proceed?",
   "confirm-reset-settings": "Reset all settings to their defaults? This will not delete your history or downloaded files.",
+  "confirm-reset-scraper": "Reset scraper core back to bundled baseline version? Any downloaded OTA patch will be removed.",
   "confirm-title-default": "Confirm Action",
   "corner-modern": "Modern (10px)",
   "corner-round": "Round (20px)",

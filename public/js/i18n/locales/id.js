@@ -46,6 +46,7 @@ export default {
   "concurrent-5": "5 sekaligus",
   "confirm-msg-default": "Apakah Anda yakin ingin melanjutkan?",
   "confirm-reset-settings": "Reset semua pengaturan ke default? History dan file unduhan tidak akan terhapus.",
+  "confirm-reset-scraper": "Kembalikan scraper ke versi bawaan aplikasi? Patch OTA yang diunduh akan dihapus.",
   "confirm-title-default": "Konfirmasi Tindakan",
   "corner-modern": "Modern (10px)",
   "corner-round": "Membulat (20px)",

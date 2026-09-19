@@ -44,6 +44,7 @@ export default {
   "concurrent-3": "3 एक साथ",
   "concurrent-5": "5 एक साथ",
   "confirm-msg-default": "क्या आप वाकई आगे बढ़ना चाहते हैं?",
+  "confirm-reset-scraper": "स्क्रैपर कोर को ऐप के मूल संस्करण पर रीसेट करें? डाउनलोड किया गया OTA पैच हटा दिया जाएगा।",
   "confirm-reset-settings": "सभी सेटिंग्स को उनके डिफ़ॉल्ट पर रीसेट करें? इससे आपका इतिहास या डाउनलोड फ़ाइलें नहीं हटेंगी।",
   "confirm-title-default": "कार्रवाई की पुष्टि करें",
   "corner-modern": "आधुनिक (10px)",
