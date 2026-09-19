@@ -5,6 +5,7 @@ import {
   stopAllMedia,
   truncate,
   copyToClipboard,
+  openNativeFolder,
   Filesystem,
 } from "../utils/index.js";
 import { currentLang } from "../modules/core.js";
@@ -37,9 +38,18 @@ export function getCleanDirectoryPath(item, rawFile, itemType) {
     cleaned = cleaned.replace(/^file:\/\//i, "");
     cleaned = cleaned.replace(/^\/storage\/emulated\/0\//i, "");
     cleaned = cleaned.replace(/^\/sdcard\//i, "");
-    cleaned = cleaned.replace(/^\//, "");
 
-    const lastSlash = cleaned.lastIndexOf("/");
+    const isWindowsDrive = /^[a-zA-Z]:[/\\]/.test(cleaned);
+    const isUnixAbsolute = cleaned.startsWith("/");
+
+    if (!isWindowsDrive && !isUnixAbsolute) {
+      cleaned = cleaned.replace(/^\//, "");
+    }
+
+    const lastSlash = Math.max(
+      cleaned.lastIndexOf("/"),
+      cleaned.lastIndexOf("\\"),
+    );
     if (lastSlash !== -1) {
       return cleaned.substring(0, lastSlash);
     }
@@ -99,7 +109,11 @@ export function getCleanDirectoryPath(item, rawFile, itemType) {
     return localStorage.getItem("mori_photo_path") || "Pictures/Mori";
   }
 
-  return localStorage.getItem("mori_video_path") || "Movies/Mori";
+  return (
+    localStorage.getItem("mori_download_path") ||
+    localStorage.getItem("mori_video_path") ||
+    "Download/Mori"
+  );
 }
 
 let modalCurrentSlide = 0;
@@ -167,6 +181,29 @@ export async function showModal(item, onRedownload) {
     };
 
     const toCapacitorUrl = (pathOrUri) => {
+      if (!pathOrUri) return "";
+      if (
+        pathOrUri.startsWith("http://") ||
+        pathOrUri.startsWith("https://") ||
+        pathOrUri.startsWith("data:") ||
+        pathOrUri.startsWith("blob:") ||
+        pathOrUri.startsWith("asset:") ||
+        pathOrUri.startsWith("tauri:")
+      ) {
+        return pathOrUri;
+      }
+      const tauriConvert =
+        window.__TAURI__?.core?.convertFileSrc ||
+        window.__TAURI_INTERNALS__?.convertFileSrc ||
+        window.__TAURI__?.convertFileSrc;
+      if (tauriConvert) {
+        let p = String(pathOrUri);
+        p = p.replace(/^file:\/\//i, "");
+        try {
+          p = decodeURIComponent(p);
+        } catch (_) {}
+        return tauriConvert(p);
+      }
       const rawFile = toRawFileUrl(pathOrUri);
       return window.Capacitor?.convertFileSrc(rawFile) || rawFile;
     };
@@ -388,6 +425,7 @@ export async function showModal(item, onRedownload) {
         } else {
           modalPath.textContent = dirPath;
         }
+        modalPath.title = dirPath;
 
         if (!hasDownloadedFiles || !currentSlide.isLocal) {
           showMissingStatus();
@@ -395,13 +433,17 @@ export async function showModal(item, onRedownload) {
           clearMissingStatus();
         }
 
-        modalPath.onclick = () => {
-          if (rawPath && window.MoriMainBridge?.openFile) {
-            const opened = window.MoriMainBridge.openFile(rawPath);
-            if (!opened) copyToClipboard(dirPath);
-          } else {
-            copyToClipboard(dirPath);
+        modalPath.onclick = async () => {
+          if (rawPath) {
+            const opened = await openNativeFolder(dirPath || rawPath);
+            if (opened) return;
+
+            if (window.MoriMainBridge?.openFile) {
+              const fileOpened = window.MoriMainBridge.openFile(rawPath);
+              if (fileOpened) return;
+            }
           }
+          copyToClipboard(dirPath);
         };
       }
     };

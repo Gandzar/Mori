@@ -25,9 +25,12 @@ export function createVideoPlayer(dl, index, resultThumbnail) {
 
   let videoUrl = dl.url || "";
   const isLocal =
+    dl.isLocal ||
     videoUrl.includes("_capacitor_file_") ||
     videoUrl.startsWith("file://") ||
     videoUrl.startsWith("content://") ||
+    videoUrl.startsWith("asset://") ||
+    videoUrl.startsWith("tauri://") ||
     videoUrl.includes("localhost") ||
     videoUrl.includes("127.0.0.1");
   const isDouyin = /douyin|snssdk/i.test(videoUrl);
