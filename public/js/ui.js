@@ -104,17 +104,18 @@ export function renderHistory(onItemClick, onDeleteClick) {
         activeUrl.includes(item.url) ||
         (item.url && activeUrl && item.url.includes(activeUrl)));
 
+    const defaultPlaceholder = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23888'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E";
     const isDataSaver = localStorage.getItem("mori_data_saver") === "true";
-    let thumbSrc = isDataSaver
-      ? "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23666'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E"
-      : item.thumbnail;
+    let thumbSrc = isDataSaver ? defaultPlaceholder : null;
 
     if (!isDataSaver) {
-      if (item.localThumbnail) {
+      const isValidThumb = (t) => typeof t === "string" && t.length > 0 && !t.startsWith("thumb_");
+
+      if (isValidThumb(item.localThumbnail)) {
         thumbSrc = item.localThumbnail;
-      } else if (item.localFiles && item.localFiles.length > 0 && item.localFiles[0].thumbnail) {
+      } else if (item.localFiles && item.localFiles.length > 0 && isValidThumb(item.localFiles[0].thumbnail)) {
         thumbSrc = item.localFiles[0].thumbnail;
-      } else if (item.thumbnail) {
+      } else if (isValidThumb(item.thumbnail)) {
         thumbSrc = item.thumbnail;
       } else if (item.localFiles && item.localFiles.length > 0) {
         const first = item.localFiles[0];
@@ -129,9 +130,11 @@ export function renderHistory(onItemClick, onDeleteClick) {
       }
     }
 
+    if (!thumbSrc) thumbSrc = defaultPlaceholder;
+
     card.innerHTML = `
       <div class="history-thumb-container">
-          <img src="${escapeHtml(thumbSrc)}" alt="thumb" class="hist-img" referrerpolicy="no-referrer">
+          <img src="${escapeHtml(thumbSrc)}" alt="" class="hist-img" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${defaultPlaceholder}';">
           ${item.localFiles && item.localFiles.length > 1 ? `<div class="multi-indicator">${item.localFiles.length}</div>` : ""}
           ${isDownloading ? `<div class="hist-downloading-overlay"><div class="hist-dl-spinner"></div></div>` : ""}
       </div>
@@ -149,15 +152,6 @@ export function renderHistory(onItemClick, onDeleteClick) {
             </button>`
       }
     `;
-
-    const img = card.querySelector(".hist-img");
-    img.onerror = () => {
-      if (item.thumbnail && img.src !== item.thumbnail) {
-        img.src = item.thumbnail;
-      } else {
-        img.style.display = "none";
-      }
-    };
 
     const favBtn = card.querySelector(".hist-fav-btn");
     if (favBtn) {

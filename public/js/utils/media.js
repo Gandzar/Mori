@@ -47,9 +47,12 @@ export async function getVideoThumbnail(videoUri) {
     video.onseeked = async () => {
       try {
         const canvas = document.createElement("canvas");
-        const scale = 0.5;
-        canvas.width = (video.videoWidth || 640) * scale;
-        canvas.height = (video.videoHeight || 360) * scale;
+        const maxDim = 180;
+        const vw = video.videoWidth || 640;
+        const vh = video.videoHeight || 360;
+        const scale = Math.min(maxDim / vw, maxDim / vh, 1.0);
+        canvas.width = Math.max(1, Math.round(vw * scale));
+        canvas.height = Math.max(1, Math.round(vh * scale));
         const ctx = canvas.getContext("2d");
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
@@ -59,18 +62,7 @@ export async function getVideoThumbnail(videoUri) {
         canvas.width = 0;
         canvas.height = 0;
         cleanup();
-
-        if (window.Capacitor?.isNativePlatform?.() && Filesystem) {
-          const fileName = `thumb_${Date.now()}.jpg`;
-          await Filesystem.writeFile({
-            path: fileName,
-            data: dataUrl.split(",")[1],
-            directory: "CACHE",
-          });
-          resolve(fileName);
-        } else {
-          resolve(dataUrl);
-        }
+        resolve(dataUrl);
       } catch (e) {
         cleanup();
         console.error("Canvas thumbnail error:", e);
@@ -84,7 +76,9 @@ export async function getVideoThumbnail(videoUri) {
       reject(new Error("Video error"));
     };
 
-    video.crossOrigin = "anonymous";
+    if (videoUri && (videoUri.startsWith("http://") || videoUri.startsWith("https://"))) {
+      video.crossOrigin = "anonymous";
+    }
     video.muted = true;
     video.playsInline = true;
     video.preload = "metadata";

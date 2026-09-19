@@ -332,6 +332,7 @@ window.addEventListener("mori_file_saved", async (e) => {
   if (isVideo) {
     try {
       let localThumbnail = null;
+      // 1. Android Native Bridge
       if (window.MoriMainBridge?.getVideoThumbnail) {
         try {
           localThumbnail = window.MoriMainBridge.getVideoThumbnail(
@@ -339,6 +340,19 @@ window.addEventListener("mori_file_saved", async (e) => {
           );
         } catch (_) {}
       }
+
+      // 2. iOS Capacitor Native Bridge (AVAssetImageGenerator via MoriSecurity)
+      const secPlugin = window.Capacitor?.Plugins?.MoriSecurity || window.MoriSecurity;
+      if (!localThumbnail && secPlugin?.getVideoThumbnail) {
+        try {
+          const res = await secPlugin.getVideoThumbnail({
+            path: path || fileUri,
+          });
+          if (res?.thumbnail) localThumbnail = res.thumbnail;
+        } catch (_) {}
+      }
+
+      // 3. Fallback in-browser canvas
       if (!localThumbnail && window.Capacitor) {
         const videoSrc = window.Capacitor.convertFileSrc(fileUri);
         localThumbnail = await getVideoThumbnail(
@@ -346,13 +360,18 @@ window.addEventListener("mori_file_saved", async (e) => {
           path || fileUri,
         ).catch(() => null);
       }
-      if (!localThumbnail) {
+
+      const isValidThumb = (t) => typeof t === "string" && t.length > 0 && !t.startsWith("thumb_");
+
+      if (!localThumbnail || !isValidThumb(localThumbnail)) {
         history = JSON.parse(localStorage.getItem("mori_history") || "[]");
         const found = history.find((h) => cleanUrl(h.url) === target);
-        if (found?.thumbnail) localThumbnail = found.thumbnail;
+        if (found?.thumbnail && isValidThumb(found.thumbnail)) {
+          localThumbnail = found.thumbnail;
+        }
       }
 
-      if (localThumbnail) {
+      if (localThumbnail && isValidThumb(localThumbnail)) {
         history = JSON.parse(localStorage.getItem("mori_history") || "[]");
         history = history.map((item) => {
           if (cleanUrl(item.url) === target) {
@@ -360,11 +379,12 @@ window.addEventListener("mori_file_saved", async (e) => {
             localFiles.forEach((f) => {
               if (f.path === path) f.thumbnail = localThumbnail;
             });
+            const keepOriginalThumb = isValidThumb(item.thumbnail) ? item.thumbnail : localThumbnail;
             return {
               ...item,
               localFiles,
-              localThumbnail: localThumbnail || item.localThumbnail,
-              thumbnail: localThumbnail || item.thumbnail,
+              localThumbnail: localThumbnail,
+              thumbnail: keepOriginalThumb,
               thumbVersion: 3,
               versionCode: 18,
               versionName: "4.3.2",
@@ -553,7 +573,9 @@ export function refreshAllVideoThumbnails() {
 
     const pendingIndices = [];
     for (let i = 0; i < history.length; i++) {
-      if (history[i].thumbVersion !== 3) {
+      const item = history[i];
+      const hasBadThumb = !item.localThumbnail || item.localThumbnail.startsWith("thumb_") || item.thumbnail?.startsWith("thumb_");
+      if (item.thumbVersion !== 4 || hasBadThumb) {
         pendingIndices.push(i);
       }
     }
@@ -562,7 +584,7 @@ export function refreshAllVideoThumbnails() {
 
     isRefreshingThumbnails = true;
 
-    const processNext = (idxListIndex) => {
+    const processNext = async (idxListIndex) => {
       const currentModal = document.getElementById("modalOverlay");
       if (
         window._moriIsModalOpen ||
@@ -608,10 +630,21 @@ export function refreshAllVideoThumbnails() {
 
       if (videoPath) {
         try {
-          const freshThumb = window.MoriMainBridge.getVideoThumbnail(videoPath);
-          if (freshThumb) {
+          let freshThumb = null;
+          if (window.MoriMainBridge?.getVideoThumbnail) {
+            freshThumb = window.MoriMainBridge.getVideoThumbnail(videoPath);
+          } else {
+            const secPlugin = window.Capacitor?.Plugins?.MoriSecurity || window.MoriSecurity;
+            if (secPlugin?.getVideoThumbnail) {
+              const res = await secPlugin.getVideoThumbnail({ path: videoPath }).catch(() => null);
+              if (res?.thumbnail) freshThumb = res.thumbnail;
+            }
+          }
+          if (freshThumb && !freshThumb.startsWith("thumb_")) {
             item.localThumbnail = freshThumb;
-            item.thumbnail = freshThumb;
+            if (!item.thumbnail || item.thumbnail.startsWith("thumb_")) {
+              item.thumbnail = freshThumb;
+            }
             if (item.localFiles) {
               item.localFiles.forEach((f) => {
                 if (f.path === videoPath || f.uri === videoPath)
@@ -621,7 +654,7 @@ export function refreshAllVideoThumbnails() {
           }
         } catch (_) {}
       }
-      item.thumbVersion = 3;
+      item.thumbVersion = 4;
       safeSetHistory(currentHistory);
 
       const historyList = document.querySelector(".history-list");

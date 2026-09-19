@@ -73,9 +73,10 @@ export async function handlePostDownload({
     translations[currentLang]?.["toast-download-complete"] ||
     "Download Complete";
   const dismissMs = window._moriPlaylistDownloading ? 1200 : 3000;
+  const displayFolder = targetFolder.startsWith("/") ? targetFolder : `/${targetFolder}`;
   completeDownloadProgressToast(
     completeTitle,
-    `/Download/${targetFolder}`,
+    displayFolder,
     dismissMs,
   );
 
@@ -86,7 +87,7 @@ export async function handlePostDownload({
     try {
       window.MoriMainBridge.showCompleteNotification(
         effectiveTitle,
-        `/Download/${targetFolder}/${fileName}`,
+        `${displayFolder}/${fileName}`,
       );
     } catch (_) {}
   }
