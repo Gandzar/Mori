@@ -31,6 +31,7 @@
     "@capacitor/network": "^7.0.4",
     "@capacitor/share": "^7.0.4",
     "@capgo/capacitor-native-biometric": "^7.6.0",
+    "mori-security": "file:packages/mori-security",
     "axios": "^1.16.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",

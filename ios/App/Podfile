@@ -19,11 +19,11 @@ def capacitor_pods
   pod 'CapacitorNetwork', :path => '../../node_modules/@capacitor/network'
   pod 'CapacitorShare', :path => '../../node_modules/@capacitor/share'
   pod 'CapgoCapacitorNativeBiometric', :path => '../../node_modules/@capgo/capacitor-native-biometric'
+  pod 'MoriSecurity', :path => '../../packages/mori-security'
 end
 
 target 'App' do
   capacitor_pods
-  # Add your Pods here
 end
 
 post_install do |installer|

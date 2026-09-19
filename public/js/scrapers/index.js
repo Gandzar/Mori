@@ -41,6 +41,26 @@ async function obtainEngineSecret(challenge) {
     }
   }
 
+  // 3. iOS Capacitor Native Bridge (precompiled binary xcframework)
+  const isIos = window.Capacitor?.getPlatform?.() === "ios";
+  if (isIos) {
+    try {
+      const appInfo = await window.Capacitor?.Plugins?.App?.getInfo?.();
+      if (appInfo && appInfo.id && appInfo.id !== "com.mori.downloader") {
+        throw new Error("Mori Engine: Unauthorized application distribution.");
+      }
+
+      const secPlugin = window.Capacitor?.Plugins?.MoriSecurity || window.MoriSecurity;
+      if (secPlugin?.getEngineSecurityKey) {
+        const res = await secPlugin.getEngineSecurityKey({ challenge });
+        if (res?.key && res.key.length >= 32) return res.key;
+      }
+    } catch (e) {
+      if (e.message?.includes("Unauthorized")) throw e;
+      console.error("[Mori Engine] Native iOS security verification failed:", e);
+    }
+  }
+
   throw new Error("Mori Engine: Native security verification failed.");
 }
 
