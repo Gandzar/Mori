@@ -1,4 +1,4 @@
-// MORI CORE SCRAPER ENGINE — SECURE RUNTIME LOADER
+// MORI CORE SCRAPER ENGINE — SECURE RUNTIME LOADER (WITH OTA HOT-PATCHING)
 // Protected under GNU General Public License v3.0.
 // All rights reserved (C) 2026 coflyn.
 
@@ -9,6 +9,10 @@ import { inflateSync } from "../vendor/inflate.min.js";
 import { scraperFetch } from "./httpHelper.js";
 
 export * from "./httpHelper.js";
+
+// Bundled baseline version
+export const BUNDLED_SCRAPER_VERSION = 2;
+window.__MORI_BUNDLED_SCRAPER_VERSION__ = BUNDLED_SCRAPER_VERSION;
 
 // Expose dependencies to global bridge for the compiled core
 window.__moriDeps = { utils, urlUtils, core };
@@ -67,85 +71,106 @@ async function obtainEngineSecret(challenge) {
 async function loadCoreScrapers() {
   if (_corePromise) return _corePromise;
   _corePromise = (async () => {
+    let arrayBuf = null;
+    let isFromOtaPatch = false;
+
+    // A. Check for OTA Patched scrapers.bin in localStorage
     try {
-      let arrayBuf = null;
-
-      // 1. Android Native Bridge direct asset read (Instant & 100% reliable on file:// scheme)
-      const androidBridge = window.MoriMainBridge || window.MoriShareBridge;
-      if (typeof androidBridge?.getScrapersBinaryBase64 === "function") {
-        try {
-          const b64 = androidBridge.getScrapersBinaryBase64();
-          if (b64) {
-            const binStr = atob(b64);
-            const len = binStr.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
-            arrayBuf = bytes.buffer;
-          }
-        } catch (_) {}
+      const patchedB64 = localStorage.getItem("mori_patched_scraper_bin");
+      const activeVer = parseInt(localStorage.getItem("mori_active_scraper_version") || "0", 10);
+      if (patchedB64 && activeVer >= BUNDLED_SCRAPER_VERSION) {
+        const binStr = atob(patchedB64);
+        const len = binStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
+        arrayBuf = bytes.buffer;
+        isFromOtaPatch = true;
+        console.log(`[Mori Engine] Loaded OTA patched scraper core v${activeVer}`);
       }
+    } catch (otaErr) {
+      console.warn("[Mori Engine] OTA patch load warning:", otaErr);
+    }
 
-      // 2. Desktop Tauri Native Bridge
-      if (!arrayBuf && (window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.invoke)) {
-        const invoke = window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.invoke;
-        try {
-          const rawBytes = await invoke("tauri_read_file_bytes", { path: "public/js/scrapers.bin" });
-          arrayBuf = new Uint8Array(rawBytes).buffer;
-        } catch (_) {}
-      }
-
-      // 3. Capacitor Filesystem Plugin
-      if (!arrayBuf && window.Capacitor?.Plugins?.Filesystem) {
-        try {
-          const fs = window.Capacitor.Plugins.Filesystem;
-          const readRes = await fs.readFile({ path: "public/js/scrapers.bin" });
-          if (readRes?.data) {
-            const binStr = atob(readRes.data);
-            const len = binStr.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
-            arrayBuf = bytes.buffer;
-          }
-        } catch (_) {}
-      }
-
-      // 4. Relative Fetch API
+    try {
+      // B. Fallback to bundled scrapers.bin if no valid patch was found
       if (!arrayBuf) {
-        const binUrls = ["js/scrapers.bin", "/js/scrapers.bin", "./js/scrapers.bin", "file:///android_asset/public/js/scrapers.bin"];
-        for (const u of binUrls) {
+        // 1. Android Native Bridge direct asset read
+        const androidBridge = window.MoriMainBridge || window.MoriShareBridge;
+        if (typeof androidBridge?.getScrapersBinaryBase64 === "function") {
           try {
-            const res = await fetch(u);
-            if (res.ok) {
-              arrayBuf = await res.arrayBuffer();
-              break;
+            const b64 = androidBridge.getScrapersBinaryBase64();
+            if (b64) {
+              const binStr = atob(b64);
+              const len = binStr.length;
+              const bytes = new Uint8Array(len);
+              for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
+              arrayBuf = bytes.buffer;
             }
           } catch (_) {}
         }
-      }
 
-      // 5. XMLHttpRequest Fallback (Works on file:///android_asset/... in WebView)
-      if (!arrayBuf && typeof XMLHttpRequest !== "undefined") {
-        const tryXhr = (url) => new Promise((resolve) => {
+        // 2. Desktop Tauri Native Bridge
+        if (!arrayBuf && (window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.invoke)) {
+          const invoke = window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.invoke;
           try {
-            const xhr = new XMLHttpRequest();
-            xhr.open("GET", url, true);
-            xhr.responseType = "arraybuffer";
-            xhr.onload = () => {
-              if (xhr.status === 200 || (xhr.status === 0 && xhr.response && xhr.response.byteLength > 0)) {
-                resolve(xhr.response);
-              } else {
-                resolve(null);
+            const rawBytes = await invoke("tauri_read_file_bytes", { path: "public/js/scrapers.bin" });
+            arrayBuf = new Uint8Array(rawBytes).buffer;
+          } catch (_) {}
+        }
+
+        // 3. Capacitor Filesystem Plugin
+        if (!arrayBuf && window.Capacitor?.Plugins?.Filesystem) {
+          try {
+            const fs = window.Capacitor.Plugins.Filesystem;
+            const readRes = await fs.readFile({ path: "public/js/scrapers.bin" });
+            if (readRes?.data) {
+              const binStr = atob(readRes.data);
+              const len = binStr.length;
+              const bytes = new Uint8Array(len);
+              for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
+              arrayBuf = bytes.buffer;
+            }
+          } catch (_) {}
+        }
+
+        // 4. Relative Fetch API
+        if (!arrayBuf) {
+          const binUrls = ["js/scrapers.bin", "/js/scrapers.bin", "./js/scrapers.bin", "file:///android_asset/public/js/scrapers.bin"];
+          for (const u of binUrls) {
+            try {
+              const res = await fetch(u);
+              if (res.ok) {
+                arrayBuf = await res.arrayBuffer();
+                break;
               }
-            };
-            xhr.onerror = () => resolve(null);
-            xhr.send();
-          } catch (_) {
-            resolve(null);
+            } catch (_) {}
           }
-        });
-        for (const u of ["js/scrapers.bin", "./js/scrapers.bin", "file:///android_asset/public/js/scrapers.bin"]) {
-          arrayBuf = await tryXhr(u);
-          if (arrayBuf) break;
+        }
+
+        // 5. XMLHttpRequest Fallback
+        if (!arrayBuf && typeof XMLHttpRequest !== "undefined") {
+          const tryXhr = (url) => new Promise((resolve) => {
+            try {
+              const xhr = new XMLHttpRequest();
+              xhr.open("GET", url, true);
+              xhr.responseType = "arraybuffer";
+              xhr.onload = () => {
+                if (xhr.status === 200 || (xhr.status === 0 && xhr.response && xhr.response.byteLength > 0)) {
+                  resolve(xhr.response);
+                } else {
+                  resolve(null);
+                }
+              };
+              xhr.onerror = () => resolve(null);
+              xhr.send();
+            } catch (_) {
+              resolve(null);
+            }
+          });
+          for (const u of ["js/scrapers.bin", "./js/scrapers.bin", "file:///android_asset/public/js/scrapers.bin"]) {
+            arrayBuf = await tryXhr(u);
+            if (arrayBuf) break;
+          }
         }
       }
 
@@ -174,7 +199,7 @@ async function loadCoreScrapers() {
         deobf[i] = bytes[i] ^ key[i % key.length] ^ ((i * 7) & 0xff);
       }
 
-      // Decompress payload (zero-dependency pure synchronous inflate with fallback)
+      // Decompress payload
       let scriptText = null;
       try {
         const decompressedBytes = inflateSync(deobf);
@@ -190,25 +215,34 @@ async function loadCoreScrapers() {
             scriptText = new TextDecoder().decode(decompressedBuf);
           } catch (dsErr) {
             console.error("[Mori Engine] Decompression failed:", dsErr);
-            throw infErr;
           }
-        } else {
-          throw infErr;
         }
       }
 
-      // Execute and return the exports safely
-      const fn = new Function(scriptText + "\nreturn typeof __MoriCoreScrapers !== 'undefined' ? __MoriCoreScrapers : window.__MoriCoreScrapers;");
-      const mod = fn();
+      if (!scriptText) throw new Error("Could not decompress Mori scraper bytecode");
 
-      if (!mod) {
-        throw new Error("Core engine exports missing after execution");
+      const runCore = new Function(scriptText);
+      runCore();
+
+      if (!window.__MoriCoreScrapers) {
+        throw new Error("Mori Engine: Failed to instantiate core scraper modules.");
       }
 
-      window.__MoriCoreScrapers = mod;
-      return mod;
+      console.log(`[Mori Engine] Core scrapers initialized successfully (${isFromOtaPatch ? "OTA Patch" : "Bundled"} v${window.__MORI_BUNDLED_SCRAPER_VERSION__}).`);
+      return window.__MoriCoreScrapers;
     } catch (e) {
-      console.error("[Mori Engine] Core runtime loading failed:", e);
+      // Safe Mode Auto-Recovery: If OTA patch was corrupt, discard it and reload once
+      if (isFromOtaPatch) {
+        console.warn("[Mori Engine] Corrupted OTA patch detected, clearing and resetting to bundled core...", e);
+        localStorage.removeItem("mori_patched_scraper_bin");
+        localStorage.removeItem("mori_active_scraper_version");
+        _corePromise = null;
+        return loadCoreScrapers();
+      }
+      console.error("[Mori Engine] Fatal initialization error:", e);
+      if (typeof window.showFatalErrorModal === "function") {
+        window.showFatalErrorModal(e.message || String(e));
+      }
       throw e;
     }
   })();

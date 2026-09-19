@@ -7,12 +7,18 @@ import {
   UPDATE_CHECK_URL,
   REPO_URL,
   checkUpdateBtn,
+  checkScraperUpdateBtn,
   currentLang,
   openExternalUrl,
   howToUseBtn,
   aboutAppBtn,
   shareAppBtn,
 } from "./core.js";
+import {
+  checkScraperUpdate,
+  initScraperAutoCheck,
+  updateScraperVersionUI,
+} from "./updateScrapers.js";
 
 export function isNewerVersion(latest, current) {
   if (!latest || !current) return false;
@@ -132,6 +138,9 @@ export async function autoCheckUpdate() {
 
 checkUpdateBtn?.addEventListener("click", checkUpdate);
 autoCheckUpdate();
+
+checkScraperUpdateBtn?.addEventListener("click", () => checkScraperUpdate(true));
+initScraperAutoCheck();
 
 howToUseBtn?.addEventListener("click", () => {
   const lang = translations[currentLang];
