@@ -25,6 +25,12 @@ import android.graphics.Matrix;
 import androidx.core.content.FileProvider;
 import android.graphics.Bitmap;
 import android.util.Base64;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.provider.Settings;
+import android.provider.DocumentsContract;
+import androidx.core.content.ContextCompat;
+import androidx.core.app.ActivityCompat;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
  
@@ -83,6 +89,73 @@ public class MainActivity extends BridgeActivity {
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private String pendingFolderCallbackId = null;
+
+    private void sendFolderCallback(String callbackId, String path) {
+        mainHandler.post(() -> {
+            try {
+                WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+                if (webView != null) {
+                    String js = "if (window.__moriFolderCallback && window.__moriFolderCallback['" + callbackId + "']) { " +
+                                "  window.__moriFolderCallback['" + callbackId + "'](" + JSONObject.quote(path != null ? path : "") + "); " +
+                                "  delete window.__moriFolderCallback['" + callbackId + "']; " +
+                                "}";
+                    webView.evaluateJavascript(js, null);
+                }
+            } catch (Exception e) {
+                Log.e("MoriMain", "sendFolderCallback error: " + e.getMessage());
+            }
+        });
+    }
+
+    private String getPathFromTreeUri(Uri uri) {
+        if (uri == null) return "";
+        try {
+            String docId = DocumentsContract.getTreeDocumentId(uri);
+            if (docId != null) {
+                String[] parts = docId.split(":");
+                if (parts.length >= 2) {
+                    return parts[1];
+                } else if (parts.length == 1 && !"primary".equalsIgnoreCase(parts[0])) {
+                    return parts[0];
+                }
+            }
+        } catch (Exception e) {
+            try {
+                String path = Uri.decode(uri.toString());
+                int treeIdx = path.indexOf("/tree/");
+                if (treeIdx != -1) {
+                    String sub = path.substring(treeIdx + 6);
+                    if (sub.contains(":")) {
+                        return sub.substring(sub.indexOf(":") + 1);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        return "";
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 201) {
+            String selectedPath = "";
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                Uri treeUri = data.getData();
+                try {
+                    getContentResolver().takePersistableUriPermission(
+                        treeUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    );
+                } catch (Exception ignored) {}
+                selectedPath = getPathFromTreeUri(treeUri);
+            }
+            if (pendingFolderCallbackId != null) {
+                sendFolderCallback(pendingFolderCallbackId, selectedPath);
+                pendingFolderCallbackId = null;
+            }
+        }
+    }
 
     public class MoriMainBridge {
         @JavascriptInterface
@@ -644,6 +717,92 @@ public class MainActivity extends BridgeActivity {
             }
             return false;
         }
+
+        @JavascriptInterface
+        public boolean hasAllFilesPermission() {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                return Environment.isExternalStorageManager();
+            }
+            return ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        }
+
+        @JavascriptInterface
+        public void requestAllFilesPermission() {
+            mainHandler.post(() -> {
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        try {
+                            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                            intent.setData(Uri.parse("package:" + getPackageName()));
+                            startActivity(intent);
+                        } catch (Exception e) {
+                            Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                            startActivity(intent);
+                        }
+                    } else {
+                        ActivityCompat.requestPermissions(MainActivity.this, new String[]{
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        }, 102);
+                    }
+                } catch (Exception e) {
+                    Log.e("MoriMain", "requestAllFilesPermission error: " + e.getMessage());
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void pickFolder(String callbackId) {
+            pendingFolderCallbackId = callbackId;
+            mainHandler.post(() -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    startActivityForResult(intent, 201);
+                } catch (Exception e) {
+                    Log.e("MoriMain", "pickFolder error: " + e.getMessage());
+                    sendFolderCallback(callbackId, "");
+                    pendingFolderCallbackId = null;
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public boolean openFolder(String rawPath) {
+            try {
+                if (rawPath == null || rawPath.isEmpty()) return false;
+                String cleanPath = rawPath.replaceFirst("^file://", "");
+                cleanPath = URLDecoder.decode(cleanPath, "UTF-8");
+                File dir = new File(cleanPath);
+                if (!dir.isAbsolute()) {
+                    dir = new File(Environment.getExternalStorageDirectory(), cleanPath.replaceFirst("^/+", ""));
+                }
+                if (dir.isFile()) {
+                    dir = dir.getParentFile();
+                }
+                if (dir != null && dir.exists()) {
+                    Uri uri = FileProvider.getUriForFile(
+                        MainActivity.this,
+                        getApplicationContext().getPackageName() + ".fileprovider",
+                        dir
+                    );
+                    Intent intent = new Intent(Intent.ACTION_VIEW);
+                    intent.setDataAndType(uri, "resource/folder");
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try {
+                        startActivity(intent);
+                        return true;
+                    } catch (Exception e) {
+                        Intent alt = new Intent(Intent.ACTION_GET_CONTENT);
+                        alt.setDataAndType(uri, "*/*");
+                        alt.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(alt);
+                        return true;
+                    }
+                }
+            } catch (Exception ignored) {}
+            return false;
+        }
     }
 
     @Override
@@ -712,7 +871,8 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public void run() {
                     getBridge().getWebView().evaluateJavascript(
-                        "if (typeof window.checkAndMergePendingHistory === 'function') window.checkAndMergePendingHistory();", null);
+                        "if (typeof window.checkAndMergePendingHistory === 'function') window.checkAndMergePendingHistory();" +
+                        "window.dispatchEvent(new CustomEvent('mori_app_resumed'));", null);
                 }
             }, 300);
         }

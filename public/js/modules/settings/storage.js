@@ -1,5 +1,11 @@
 // storage.js — download paths, storage calculation, cache clearing, and data management
-import { Filesystem, showToast } from "../../utils/index.js";
+import {
+  Filesystem,
+  showToast,
+  pickNativeFolder,
+  normalizePathInput,
+  normalizeSavedPath,
+} from "../../utils/index.js";
 import { translations } from "../../i18n/index.js";
 import { showConfirm } from "../modals.js";
 import { renderHistory } from "../../ui.js";
@@ -16,9 +22,29 @@ import {
   wipeDataBtn,
 } from "../core.js";
 
-export let customPath = localStorage.getItem("mori_download_path") || "Mori";
-export let customMusicPath =
-  localStorage.getItem("mori_music_path") || "Mori/Music";
+export function formatPathDisplay(pathStr) {
+  if (!pathStr) return "/";
+  if (pathStr.startsWith("/") || /^[a-zA-Z]:[/\\]/.test(pathStr)) {
+    return pathStr;
+  }
+  return `/${pathStr}`;
+}
+
+export let customPath = (() => {
+  const p = localStorage.getItem("mori_download_path");
+  if (!p || p === "Mori") return "Download/Mori";
+  return normalizeSavedPath(p);
+})();
+
+export let customMusicPath = (() => {
+  const p = localStorage.getItem("mori_music_path");
+  if (!p || p === "Mori/Music" || p === "Music/Mori") {
+    const isAndroid = window.Capacitor?.getPlatform?.() === "android";
+    if (isAndroid) return "Download/Mori/Music";
+    return p || "Music/Mori";
+  }
+  return normalizeSavedPath(p);
+})();
 
 export function updateDlStatsDisplay() {
   const el = document.getElementById("historyDlStatsVal");
@@ -81,20 +107,32 @@ export async function updateStorageInfo() {
 
     if (tauriInvoke) {
       try {
-        const desktopSize = await tauriInvoke("tauri_get_folder_size", {
-          folder: "Mori",
+        const vSize = await tauriInvoke("tauri_get_folder_size", {
+          folder: customPath || "Download/Mori",
         });
-        if (typeof desktopSize === "number") {
-          totalSize = desktopSize;
+        if (typeof vSize === "number") totalSize += vSize;
+
+        if (customMusicPath && customMusicPath !== customPath) {
+          const mSize = await tauriInvoke("tauri_get_folder_size", {
+            folder: customMusicPath,
+          });
+          if (typeof mSize === "number") totalSize += mSize;
         }
       } catch (err) {
         console.warn("Tauri folder size error:", err);
       }
     } else if (Filesystem) {
       totalSize += await getFolderSize("", "CACHE");
-      const primary = await getFolderSize("Download/Mori", "EXTERNAL_STORAGE");
-      const legacy = await getFolderSize("Download/Mori", "EXTERNAL");
-      totalSize += Math.max(primary, legacy);
+      const vPath = customPath || "Download/Mori";
+      const mPath = customMusicPath || "Music/Mori";
+      const primaryV = await getFolderSize(vPath, "EXTERNAL_STORAGE");
+      const legacyV = await getFolderSize(vPath, "EXTERNAL");
+      totalSize += Math.max(primaryV, legacyV);
+      if (mPath !== vPath) {
+        const primaryM = await getFolderSize(mPath, "EXTERNAL_STORAGE");
+        const legacyM = await getFolderSize(mPath, "EXTERNAL");
+        totalSize += Math.max(primaryM, legacyM);
+      }
     }
 
     const sizeInMB = (totalSize / (1024 * 1024)).toFixed(2);
@@ -162,10 +200,78 @@ export async function clearCacheSilently() {
  * Initializes download path pickers, storage event listeners, cache logic, and wipe dialogs
  */
 export function initStorageSettings() {
+  const isAndroid = window.Capacitor?.getPlatform?.() === "android";
+  const isIos = window.Capacitor?.getPlatform?.() === "ios";
+  const isDesktop = Boolean(
+    window.__TAURI__?.core?.invoke ||
+    window.__TAURI_INTERNALS__?.invoke ||
+    window.__TAURI__?.invoke
+  );
+
   // 1. Initial display
-  if (pathVal) pathVal.textContent = `/Download/${customPath}`;
-  if (musicPathVal) musicPathVal.textContent = `/Download/${customMusicPath}`;
+  if (pathVal) pathVal.textContent = formatPathDisplay(customPath);
+  if (musicPathVal) musicPathVal.textContent = formatPathDisplay(customMusicPath);
   updateDlStatsDisplay();
+
+  // All Files Access UI on Android (always visible on Android in compact single-row design)
+  const updateAllFilesUI = () => {
+    const item = document.getElementById("allFilesAccessItem");
+    const chip = document.getElementById("allFilesStatusChip");
+    if (!item || !isAndroid) return;
+
+    item.style.display = "flex";
+    const granted = window.MoriMainBridge?.hasAllFilesPermission
+      ? window.MoriMainBridge.hasAllFilesPermission()
+      : false;
+
+    const lang = translations[currentLang] || translations.en;
+    item.title = lang["desc-all-files-access"] || "Required to save & play media in any folder";
+    if (chip) {
+      chip.textContent = granted
+        ? (lang["status-granted"] || "Granted")
+        : (lang["status-not-granted"] || "Not Granted");
+      chip.className = "mori-status-chip " + (granted ? "granted" : "warning");
+    }
+
+    // If permission is revoked / not granted, immediately fallback any outside path to Download/Mori
+    if (!granted) {
+      let changed = false;
+      const currentVideo = (localStorage.getItem("mori_download_path") || customPath || "").trim();
+      if (
+        currentVideo &&
+        !currentVideo.toLowerCase().startsWith("download") &&
+        currentVideo !== "Mori"
+      ) {
+        customPath = "Download/Mori";
+        localStorage.setItem("mori_download_path", "Download/Mori");
+        if (pathVal) pathVal.textContent = formatPathDisplay("Download/Mori");
+        changed = true;
+      }
+
+      const currentMusic = (localStorage.getItem("mori_music_path") || customMusicPath || "").trim();
+      if (
+        currentMusic &&
+        !currentMusic.toLowerCase().startsWith("download") &&
+        currentMusic !== "Mori/Music"
+      ) {
+        customMusicPath = "Download/Mori/Music";
+        localStorage.setItem("mori_music_path", "Download/Mori/Music");
+        if (musicPathVal) musicPathVal.textContent = formatPathDisplay("Download/Mori/Music");
+        changed = true;
+      }
+
+      if (changed) {
+        updateStorageInfo();
+      }
+    }
+  };
+  updateAllFilesUI();
+  document.getElementById("allFilesAccessItem")?.addEventListener("click", () => {
+    if (window.MoriMainBridge?.requestAllFilesPermission) {
+      window.MoriMainBridge.requestAllFilesPermission();
+    }
+  });
+  window.addEventListener("mori_app_resumed", updateAllFilesUI);
 
   // 2. Listen for saved files to update stats live
   window.addEventListener("mori_file_saved", () => {
@@ -179,23 +285,63 @@ export function initStorageSettings() {
     updateDlStatsDisplay();
   });
 
+  // Helper for preset chips
+  const getVideoPresets = () => {
+    if (isAndroid) {
+      return ["Download/Mori", "Movies/Mori", "DCIM/Mori", "Download"];
+    } else if (isDesktop) {
+      return ["Movies/Mori", "Downloads/Mori", "Desktop/Mori"];
+    }
+    return ["Mori", "Videos"];
+  };
+
+  const getMusicPresets = () => {
+    if (isAndroid) {
+      return ["Download/Mori/Music", "Music/Mori", "Download/Mori"];
+    } else if (isDesktop) {
+      return ["Music/Mori", "Downloads/Mori"];
+    }
+    return ["Music", "Mori/Music"];
+  };
+
   // 3. Video Download Path Picker
   changePathBtn?.addEventListener("click", () => {
     const lang = translations[currentLang] || translations.en;
+    const presets = getVideoPresets();
+    const canBrowse = isDesktop || isAndroid;
+    const hasPerm = isAndroid && window.MoriMainBridge?.hasAllFilesPermission
+      ? window.MoriMainBridge.hasAllFilesPermission()
+      : true;
+
+    const permBannerHtml = !hasPerm
+      ? `<div id="pathPermBanner" class="path-permission-banner" style="display:flex;align-items:center;gap:8px;font-size:11px;padding:8px 10px;border-radius:8px;background:rgba(234,179,8,0.12);color:#eab308;margin-bottom:12px;cursor:pointer;">
+           <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+           <span>${lang["desc-all-files-access"] || "Tip: Grant All Files Access to save & play in any directory."}</span>
+         </div>`
+      : "";
+
+    const browseBtnHtml = canBrowse
+      ? `<button type="button" id="browseFolderBtn" class="path-preset-chip browse-chip" style="display:inline-flex;align-items:center;gap:5px;">
+           <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/></svg>
+           <span>${lang["btn-browse-folder"] || "Browse Folder"}</span>
+         </button>`
+      : "";
+
     showConfirm(
       lang["label-path-video"] || "Video Download Path",
       `<div class="path-picker-ui">
+         ${permBannerHtml}
          <div class="path-input-wrapper">
-           <span class="path-label-sm">${lang["label-subfolder-downloads"] || "Subfolder in /Download/"}</span>
+           <span class="path-label-sm">${lang["label-custom-directory"] || "Target Directory"}</span>
            <div class="mori-input-with-icon">
              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-             <input type="text" id="customPathInput" class="mori-input-noborder" value="${customPath}" placeholder="e.g. Mori" spellcheck="false" autocomplete="off">
+             <input type="text" id="customPathInput" class="mori-input-noborder" value="${customPath}" placeholder="e.g. Movies/Mori" spellcheck="false" autocomplete="off">
            </div>
          </div>
          <span class="path-label-sm">${lang["label-path-presets"] || "Presets"}</span>
          <div class="path-presets-container">
-           <button class="path-preset-chip" data-path="Mori">Mori</button>
-           <button class="path-preset-chip" data-path="Mori/Videos">Mori/Videos</button>
+           ${browseBtnHtml}
+           ${presets.map((p) => `<button type="button" class="path-preset-chip" data-path="${p}">${p}</button>`).join("")}
          </div>
          <button id="resetPathBtn" class="reset-path-btn">
            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -205,21 +351,34 @@ export function initStorageSettings() {
       () => {
         const input = document.getElementById("customPathInput");
         if (input && input.value.trim()) {
-          const newPath = input.value.trim().replace(/[\\:*?"<>|]/g, "");
-          customPath = newPath;
-          localStorage.setItem("mori_download_path", newPath);
-          if (pathVal) pathVal.textContent = `/Download/${newPath}`;
-          showToast(lang["toast-path-updated"] || "Path updated");
+          const newPath = normalizePathInput(input.value);
+          const hasPerm = isAndroid && window.MoriMainBridge?.hasAllFilesPermission
+            ? window.MoriMainBridge.hasAllFilesPermission()
+            : true;
+
+          if (isAndroid && !hasPerm && !newPath.toLowerCase().startsWith("download")) {
+            showToast(lang["desc-all-files-access"] || "All Files Access required. Reverted to Download/Mori.");
+            customPath = "Download/Mori";
+            localStorage.setItem("mori_download_path", "Download/Mori");
+            if (pathVal) pathVal.textContent = formatPathDisplay("Download/Mori");
+          } else {
+            customPath = newPath;
+            localStorage.setItem("mori_download_path", newPath);
+            if (pathVal) pathVal.textContent = formatPathDisplay(newPath);
+            showToast(lang["toast-path-updated"] || "Path updated");
+          }
+          updateStorageInfo();
+          updateAllFilesUI();
         }
       },
     );
     setTimeout(() => {
       const input = document.getElementById("customPathInput");
       const chips = document.querySelectorAll(
-        ".path-presets-container .path-preset-chip",
+        ".path-presets-container .path-preset-chip:not(.browse-chip)",
       );
       const updateActiveChips = () => {
-        const current = input ? input.value.trim() : "";
+        const current = input ? normalizePathInput(input.value) : "";
         chips.forEach((c) => {
           if (c.getAttribute("data-path") === current) {
             c.classList.add("active");
@@ -240,9 +399,25 @@ export function initStorageSettings() {
           }
         });
       });
+
+      document.getElementById("browseFolderBtn")?.addEventListener("click", async () => {
+        const chosen = await pickNativeFolder();
+        if (chosen && input) {
+          input.value = chosen;
+          updateActiveChips();
+          input.focus();
+        }
+      });
+
+      document.getElementById("pathPermBanner")?.addEventListener("click", () => {
+        if (window.MoriMainBridge?.requestAllFilesPermission) {
+          window.MoriMainBridge.requestAllFilesPermission();
+        }
+      });
+
       document.getElementById("resetPathBtn")?.addEventListener("click", () => {
         if (input) {
-          input.value = "Mori";
+          input.value = isAndroid ? "Download/Mori" : "Movies/Mori";
           updateActiveChips();
           input.focus();
         }
@@ -257,20 +432,41 @@ export function initStorageSettings() {
   // 4. Music Download Path Picker
   changeMusicPathBtn?.addEventListener("click", () => {
     const lang = translations[currentLang] || translations.en;
+    const presets = getMusicPresets();
+    const canBrowse = isDesktop || isAndroid;
+    const hasPerm = isAndroid && window.MoriMainBridge?.hasAllFilesPermission
+      ? window.MoriMainBridge.hasAllFilesPermission()
+      : true;
+
+    const permBannerHtml = !hasPerm
+      ? `<div id="musicPathPermBanner" class="path-permission-banner" style="display:flex;align-items:center;gap:8px;font-size:11px;padding:8px 10px;border-radius:8px;background:rgba(234,179,8,0.12);color:#eab308;margin-bottom:12px;cursor:pointer;">
+           <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+           <span>${lang["desc-all-files-access"] || "Tip: Grant All Files Access to save & play in any directory."}</span>
+         </div>`
+      : "";
+
+    const browseBtnHtml = canBrowse
+      ? `<button type="button" id="browseMusicFolderBtn" class="path-preset-chip browse-chip" style="display:inline-flex;align-items:center;gap:5px;">
+           <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/></svg>
+           <span>${lang["btn-browse-folder"] || "Browse Folder"}</span>
+         </button>`
+      : "";
+
     showConfirm(
       lang["label-path-music"] || "Music Download Path",
       `<div class="path-picker-ui">
+         ${permBannerHtml}
          <div class="path-input-wrapper">
-           <span class="path-label-sm">${lang["label-subfolder-downloads"] || "Subfolder in /Download/"}</span>
+           <span class="path-label-sm">${lang["label-custom-directory"] || "Target Directory"}</span>
            <div class="mori-input-with-icon">
              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-             <input type="text" id="customMusicPathInput" class="mori-input-noborder" value="${customMusicPath}" placeholder="e.g. Mori/Music" spellcheck="false" autocomplete="off">
+             <input type="text" id="customMusicPathInput" class="mori-input-noborder" value="${customMusicPath}" placeholder="e.g. Music/Mori" spellcheck="false" autocomplete="off">
            </div>
          </div>
          <span class="path-label-sm">${lang["label-path-presets"] || "Presets"}</span>
          <div class="path-presets-container">
-           <button class="path-preset-chip" data-path="Mori/Music">Mori/Music</button>
-           <button class="path-preset-chip" data-path="Music">Music</button>
+           ${browseBtnHtml}
+           ${presets.map((p) => `<button type="button" class="path-preset-chip" data-path="${p}">${p}</button>`).join("")}
          </div>
          <button id="resetMusicPathBtn" class="reset-path-btn">
            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -280,21 +476,34 @@ export function initStorageSettings() {
       () => {
         const input = document.getElementById("customMusicPathInput");
         if (input && input.value.trim()) {
-          const newPath = input.value.trim().replace(/[\\:*?"<>|]/g, "");
-          customMusicPath = newPath;
-          localStorage.setItem("mori_music_path", newPath);
-          if (musicPathVal) musicPathVal.textContent = `/Download/${newPath}`;
-          showToast(lang["toast-path-updated"] || "Path updated");
+          const newPath = normalizePathInput(input.value);
+          const hasPerm = isAndroid && window.MoriMainBridge?.hasAllFilesPermission
+            ? window.MoriMainBridge.hasAllFilesPermission()
+            : true;
+
+          if (isAndroid && !hasPerm && !newPath.toLowerCase().startsWith("download")) {
+            showToast(lang["desc-all-files-access"] || "All Files Access required. Reverted to Download/Mori.");
+            customMusicPath = "Download/Mori/Music";
+            localStorage.setItem("mori_music_path", "Download/Mori/Music");
+            if (musicPathVal) musicPathVal.textContent = formatPathDisplay("Download/Mori/Music");
+          } else {
+            customMusicPath = newPath;
+            localStorage.setItem("mori_music_path", newPath);
+            if (musicPathVal) musicPathVal.textContent = formatPathDisplay(newPath);
+            showToast(lang["toast-path-updated"] || "Path updated");
+          }
+          updateStorageInfo();
+          updateAllFilesUI();
         }
       },
     );
     setTimeout(() => {
       const input = document.getElementById("customMusicPathInput");
       const chips = document.querySelectorAll(
-        ".path-presets-container .path-preset-chip",
+        ".path-presets-container .path-preset-chip:not(.browse-chip)",
       );
       const updateActiveChips = () => {
-        const current = input ? input.value.trim() : "";
+        const current = input ? normalizePathInput(input.value) : "";
         chips.forEach((c) => {
           if (c.getAttribute("data-path") === current) {
             c.classList.add("active");
@@ -315,15 +524,29 @@ export function initStorageSettings() {
           }
         });
       });
-      document
-        .getElementById("resetMusicPathBtn")
-        ?.addEventListener("click", () => {
-          if (input) {
-            input.value = "Mori/Music";
-            updateActiveChips();
-            input.focus();
-          }
-        });
+
+      document.getElementById("browseMusicFolderBtn")?.addEventListener("click", async () => {
+        const chosen = await pickNativeFolder();
+        if (chosen && input) {
+          input.value = chosen;
+          updateActiveChips();
+          input.focus();
+        }
+      });
+
+      document.getElementById("musicPathPermBanner")?.addEventListener("click", () => {
+        if (window.MoriMainBridge?.requestAllFilesPermission) {
+          window.MoriMainBridge.requestAllFilesPermission();
+        }
+      });
+
+      document.getElementById("resetMusicPathBtn")?.addEventListener("click", () => {
+        if (input) {
+          input.value = "Music/Mori";
+          updateActiveChips();
+          input.focus();
+        }
+      });
     }, 100);
     if (okConfirmBtn) {
       okConfirmBtn.textContent = "SAVE";

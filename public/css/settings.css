@@ -555,6 +555,7 @@ body.dark-theme .action-item:active,
 
 .item-label svg {
   opacity: 0.8;
+  flex-shrink: 0;
 }
 
 .settings-item:hover .item-label svg {

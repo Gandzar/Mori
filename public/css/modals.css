@@ -614,6 +614,41 @@
   opacity: 1;
 }
 
+.path-preset-chip.browse-chip {
+  background: rgba(var(--primary-rgb), 0.12);
+  border-color: rgba(var(--primary-rgb), 0.3);
+  color: var(--primary);
+}
+
+.path-preset-chip.browse-chip:hover {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.mori-status-chip {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mori-status-chip.granted {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.mori-status-chip.warning {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
 .reset-path-btn:active {
   transform: scale(0.98);
 }

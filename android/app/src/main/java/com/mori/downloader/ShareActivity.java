@@ -413,10 +413,33 @@ public class ShareActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // Save under DIRECTORY_DOWNLOADS (e.g. Download/Mori or Download/Mori/TikTok)
-                    File publicBaseDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                    File targetDir = new File(publicBaseDir, (folder != null && !folder.isEmpty()) ? folder : "Mori");
-                    if (!targetDir.exists()) targetDir.mkdirs();
+                    // Resolve custom target directory across storage (e.g. Movies/Mori, Music/Mori, Download/Mori, or custom)
+                    boolean hasAllFiles = true;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        hasAllFiles = Environment.isExternalStorageManager();
+                    }
+
+                    File targetDir;
+                    if (hasAllFiles && folder != null && !folder.trim().isEmpty()) {
+                        String trimmed = folder.trim();
+                        if (trimmed.startsWith("/")) {
+                            targetDir = new File(trimmed);
+                        } else {
+                            targetDir = new File(Environment.getExternalStorageDirectory(), trimmed);
+                        }
+                    } else {
+                        String sub = "Mori";
+                        if (folder != null && folder.trim().toLowerCase().startsWith("download/")) {
+                            sub = folder.trim().substring(9).trim();
+                        }
+                        targetDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), sub.isEmpty() ? "Mori" : sub);
+                    }
+                    if (!targetDir.exists()) {
+                        if (!targetDir.mkdirs()) {
+                            targetDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Mori");
+                            targetDir.mkdirs();
+                        }
+                    }
 
                     String sanitizedName = sanitize(filename);
                     int dotPos = sanitizedName.lastIndexOf('.');

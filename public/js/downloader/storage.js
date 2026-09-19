@@ -63,7 +63,7 @@ export async function saveToStorage({
       const desktopRes = await tauriInvoke("tauri_download_file", {
         url: actualDownloadUrl,
         filename: fileName,
-        folder: targetFolder || "",
+        folder: fullPath || targetFolder || "",
         headers: downloadHeaders || {},
       });
       if (desktopRes && desktopRes.status) {
