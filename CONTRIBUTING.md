@@ -36,7 +36,7 @@ Thank you for your interest in contributing to **Mori**! Whether you want to fix
 * Clearly specify your **Platform & OS version** (Android / macOS / Windows / iOS), **Mori Version**, and the **Source URL** causing the error.
 
 ### 2. Translating & Localization (`public/js/i18n/`)
-Mori supports multiple languages (English, Indonesian, Japanese, Arabic with RTL, Russian, Tagalog, Hindi). If you want to refine translations or add a new locale, edit the dictionary files in `public/js/i18n/`.
+Mori supports 9 languages (English, Indonesian, Japanese, Korean, Simplified Chinese, Arabic with RTL, Russian, Tagalog, and Hindi). If you want to refine translations or add a new locale, edit the dictionary files in `public/js/i18n/`.
 
 ### 3. Frontend & UI Enhancements
 Feel free to refine the CSS design system, optimize MoriPlayer controls, enhance glassmorphism effects, or add responsive styling.
